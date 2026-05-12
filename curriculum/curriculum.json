@@ -1,0 +1,55 @@
+{
+  "levels": [
+    { "id": "kindergarten", "label": "Kindergarten", "classes": ["KG1", "KG2"] },
+    { "id": "primary", "label": "Primary School", "classes": ["1", "2", "3", "4", "5"] },
+    { "id": "middle", "label": "Middle School", "classes": ["6", "7", "8"] },
+    { "id": "high", "label": "High School", "classes": ["9", "10"] },
+    { "id": "puc", "label": "PUC / Intermediate", "classes": ["11", "12"] }
+  ],
+  "subjects": [
+    { "id": "mathematics", "label": "Mathematics", "icon": "📐", "color": "#059669", "levels": ["primary","middle","high","puc"] },
+    { "id": "science", "label": "Science", "icon": "🔬", "color": "#0D9488", "levels": ["primary","middle","high"] },
+    { "id": "physics", "label": "Physics", "icon": "⚡", "color": "#7C3AED", "levels": ["high","puc"] },
+    { "id": "chemistry", "label": "Chemistry", "icon": "🧪", "color": "#DC2626", "levels": ["high","puc"] },
+    { "id": "biology", "label": "Biology", "icon": "🌿", "color": "#16A34A", "levels": ["high","puc"] },
+    { "id": "english", "label": "English", "icon": "📖", "color": "#2563EB", "levels": ["kindergarten","primary","middle","high","puc"] },
+    { "id": "hindi", "label": "Hindi", "icon": "🪔", "color": "#F97316", "levels": ["primary","middle","high"] },
+    { "id": "kannada", "label": "Kannada", "icon": "✍️", "color": "#EC4899", "levels": ["primary","middle","high"] },
+    { "id": "social_science", "label": "Social Science", "icon": "🌍", "color": "#0369A1", "levels": ["middle","high"] },
+    { "id": "history", "label": "History", "icon": "🏛️", "color": "#92400E", "levels": ["middle","high","puc"] },
+    { "id": "geography", "label": "Geography", "icon": "🗺️", "color": "#065F46", "levels": ["middle","high"] },
+    { "id": "civics", "label": "Civics", "icon": "🏛️", "color": "#1D4ED8", "levels": ["middle","high"] },
+    { "id": "computer_science", "label": "Computer Science", "icon": "💻", "color": "#6D28D9", "levels": ["middle","high","puc"] },
+    { "id": "general_knowledge", "label": "General Knowledge", "icon": "🌟", "color": "#D97706", "levels": ["kindergarten","primary","middle"] }
+  ],
+  "topics": {
+    "mathematics": {
+      "6": ["Fractions", "Decimals", "Integers", "Algebra Basics", "Geometry"],
+      "7": ["Rational Numbers", "Linear Equations", "Triangles", "Data Handling"],
+      "8": ["Linear Equations", "Quadrilaterals", "Algebraic Expressions", "Exponents"],
+      "9": ["Number Systems", "Polynomials", "Coordinate Geometry", "Triangles", "Statistics"],
+      "10": ["Real Numbers", "Polynomials", "Pair of Linear Equations", "Quadratic Equations", "Arithmetic Progressions", "Trigonometry", "Circles"],
+      "11": ["Sets", "Trigonometric Functions", "Complex Numbers", "Sequences", "Binomial Theorem"],
+      "12": ["Relations and Functions", "Inverse Trigonometry", "Matrices", "Determinants", "Integrals", "Differential Equations", "Probability"]
+    },
+    "science": {
+      "6": ["Food: Where Does It Come From?", "Components of Food", "Fibre to Fabric", "Sorting Materials"],
+      "7": ["Nutrition in Plants", "Nutrition in Animals", "Heat", "Acids and Bases"],
+      "8": ["Crop Production", "Microorganisms", "Force and Pressure", "Friction", "Sound"],
+      "9": ["Matter in Our Surroundings", "Atoms and Molecules", "Cell — The Unit of Life", "Motion", "Force and Laws of Motion", "Gravitation"],
+      "10": ["Chemical Reactions", "Acids, Bases and Salts", "Metals and Non-metals", "Life Processes", "Control and Coordination", "Electricity", "Light"]
+    },
+    "physics": {
+      "11": ["Units and Measurement", "Kinematics", "Laws of Motion", "Work, Energy and Power", "Gravitation", "Thermodynamics", "Waves"],
+      "12": ["Electric Charges and Fields", "Electrostatic Potential", "Current Electricity", "Magnetic Effects", "Electromagnetic Induction", "Optics", "Dual Nature", "Atoms", "Nuclei"]
+    },
+    "chemistry": {
+      "11": ["Some Basic Concepts", "Structure of Atom", "Periodic Table", "Chemical Bonding", "States of Matter", "Thermodynamics", "Equilibrium", "Organic Chemistry"],
+      "12": ["Solid State", "Solutions", "Electrochemistry", "Chemical Kinetics", "Surface Chemistry", "Coordination Compounds", "Aldehydes and Ketones", "Biomolecules", "Polymers"]
+    },
+    "biology": {
+      "11": ["The Living World", "Biological Classification", "Plant Kingdom", "Animal Kingdom", "Cell", "Cell Division", "Photosynthesis", "Respiration"],
+      "12": ["Reproduction", "Genetics and Evolution", "Human Health and Disease", "Microbes in Human Welfare", "Biotechnology", "Ecology", "Biodiversity"]
+    }
+  }
+}

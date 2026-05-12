@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+groq
+langchain
+langchain-community
+chromadb
+sentence-transformers
+streamlit
+python-dotenv
+pypdf
+gtts
+deep-translator
+requests
+httpx
+pydantic

@@ -1,0 +1,38 @@
+# Virtual Environment
+venv/
+env/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+
+# Database
+*.db
+*.sqlite3
+backend/database.db
+
+# Node
+node_modules/
+dist/
+.next/
+build/
+npm-debug.log
+yarn-error.log
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# MacOS
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Secrets
+secret/
+credentials/
