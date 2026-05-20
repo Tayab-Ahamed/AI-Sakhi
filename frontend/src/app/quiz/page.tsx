@@ -59,7 +59,7 @@ function QuizPageContent() {
     if (diffFetchRef.current) clearTimeout(diffFetchRef.current);
     diffFetchRef.current = setTimeout(async () => {
       try {
-        const ctx = await api.getRecommendedDifficulty(user.user_id, topic.trim());
+        const ctx = await api.getRecommendedDifficulty(user.user_id, topic.trim()) as { recommended: string; average_pct: number | null; data_points: number };
         setDiffRecommendation(ctx);
         if (!diffOverridden) {
           setDifficulty(ctx.recommended as Difficulty);
@@ -86,7 +86,7 @@ function QuizPageContent() {
     if (!topic.trim() || !user) return;
     setLoading(true);
     try {
-      const res = await api.generateQuiz({ topic: topic.trim(), class_: user.class_, language: user.language, user_id: user.user_id, difficulty });
+      const res = await api.generateQuiz({ topic: topic.trim(), class_: user.class_, language: user.language, user_id: user.user_id, difficulty }) as { questions?: Question[]; topic?: string };
       setQuestions(res.questions || []);
       setQuizTopic(res.topic || topic);
       // Save to offline cache so students can practice without internet
@@ -122,7 +122,7 @@ function QuizPageContent() {
     const res: Record<number, Result> = {};
     let score = 0;
     for (const q of questions) {
-      const r = await api.evaluateAnswer({ question: q, user_answer: answers[q.id] || "A", language: user?.language, user_id: user?.user_id });
+      const r = await api.evaluateAnswer({ question: q, user_answer: answers[q.id] || "A", language: user?.language, user_id: user?.user_id }) as Result;
       res[q.id] = r;
       if (r.is_correct) score++;
     }

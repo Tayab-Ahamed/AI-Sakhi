@@ -6,7 +6,7 @@ import Sidebar from "@/components/Sidebar";
 import { api } from "@/lib/api";
 import { useUser } from "@/lib/user-context";
 import { getSubjectsForClass, getTopicsForSubjectAndClass } from "@/lib/curriculum";
-import { FileText, Download, Sparkles, BookOpen, Save, CheckCircle } from "lucide-react";
+import { FileText, Download, Sparkles, Save, CheckCircle, RefreshCw, AlertCircle } from "lucide-react";
 
 type SavedNote = { topic: string; notes_md: string; savedAt: string };
 const STORAGE_KEY = "sakhi_study_notes";
@@ -23,20 +23,30 @@ function loadSavedNotes(): SavedNote[] {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
 }
 
-// Minimal markdown renderer (bold, headings, bullets)
-function renderMd(md: string) {
+// Markdown renderer — supports headings, bullets, bold inline text
+function renderMd(md: string): React.ReactNode[] {
   return md.split("\n").map((line, i) => {
-    if (line.startsWith("# "))    return <h1 key={i} style={{ fontSize: 22, fontWeight: 800, margin: "16px 0 8px", color: "var(--text-primary)" }}>{line.slice(2)}</h1>;
-    if (line.startsWith("## "))   return <h2 key={i} style={{ fontSize: 16, fontWeight: 700, margin: "14px 0 6px", color: "var(--emerald-dark, #065f46)" }}>{line.slice(3)}</h2>;
-    if (line.startsWith("### "))  return <h3 key={i} style={{ fontSize: 14, fontWeight: 700, margin: "10px 0 4px" }}>{line.slice(4)}</h3>;
+    if (line.startsWith("# "))   return <h1 key={i} style={{ fontSize: 22, fontWeight: 800, margin: "16px 0 8px", color: "var(--text-primary)" }}>{renderInline(line.slice(2))}</h1>;
+    if (line.startsWith("## "))  return <h2 key={i} style={{ fontSize: 16, fontWeight: 700, margin: "14px 0 6px", color: "var(--emerald-dark, #065f46)" }}>{renderInline(line.slice(3))}</h2>;
+    if (line.startsWith("### ")) return <h3 key={i} style={{ fontSize: 14, fontWeight: 700, margin: "10px 0 4px" }}>{renderInline(line.slice(4))}</h3>;
     if (line.startsWith("- ") || line.startsWith("* ")) return (
       <li key={i} style={{ fontSize: 14, lineHeight: 1.7, marginLeft: 20, color: "var(--text-secondary)" }}>
-        {line.slice(2).replace(/\*\*(.+?)\*\*/g, "**$1**")}
+        {renderInline(line.slice(2))}
       </li>
     );
     if (line.trim() === "") return <div key={i} style={{ height: 6 }} />;
-    return <p key={i} style={{ fontSize: 14, lineHeight: 1.75, color: "var(--text-secondary)", margin: "4px 0" }}>{line}</p>;
+    return <p key={i} style={{ fontSize: 14, lineHeight: 1.75, color: "var(--text-secondary)", margin: "4px 0" }}>{renderInline(line)}</p>;
   });
+}
+
+// Render bold (**text**) inline
+function renderInline(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*.+?\*\*)/);
+  return <>{parts.map((p, i) =>
+    p.startsWith("**") && p.endsWith("**")
+      ? <strong key={i} style={{ color: "var(--text-primary)" }}>{p.slice(2, -2)}</strong>
+      : p
+  )}</>;
 }
 
 export default function StudyNotesPage() {
@@ -46,6 +56,7 @@ export default function StudyNotesPage() {
   const [topics, setTopics] = useState<string[]>(() => user && subjects[0] ? getTopicsForSubjectAndClass((subjects[0] as { id: string }).id, user.class_) : []);
   const [topic, setTopic] = useState(() => topics[0] || "");
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState<string>("");
   const [noteTopic, setNoteTopic] = useState("");
   const [saved, setSaved] = useState(false);
@@ -66,19 +77,21 @@ export default function StudyNotesPage() {
     if (!topic.trim() || !user) return;
     setGenerating(true);
     setNotes("");
+    setError(null);
     setSaved(false);
     try {
       const subject = subjects.find((s) => (s as { id: string }).id === selectedSub);
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/study-notes/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, class_: user.class_, language: user.language, subject: (subject as { label?: string })?.label || "", user_id: user.user_id }),
-      });
-      const data = await res.json();
+      const data = await api.generateStudyNotes({
+        topic,
+        class_: user.class_,
+        language: user.language,
+        subject: (subject as { label?: string })?.label || "",
+        user_id: user.user_id,
+      }) as { notes_md?: string };
       setNotes(data.notes_md || "");
       setNoteTopic(topic);
-    } catch {
-      setNotes("Error generating notes. Please check your connection.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error generating notes. Please try again.");
     } finally {
       setGenerating(false);
     }
@@ -164,6 +177,16 @@ export default function StudyNotesPage() {
                     style={{ padding: "48px 24px", textAlign: "center" }}>
                     <div style={{ fontSize: 32, marginBottom: 12 }}>✨</div>
                     <div style={{ fontSize: 14, color: "var(--text-secondary)" }}>Sakhi is writing your notes…</div>
+                  </motion.div>
+                )}
+                {!generating && error && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card"
+                    style={{ padding: "32px 24px", textAlign: "center", border: "1.5px solid #fecaca", background: "#fef2f2" }}>
+                    <AlertCircle size={28} style={{ color: "#dc2626", marginBottom: 12 }} />
+                    <p style={{ fontSize: 14, color: "#991b1b", marginBottom: 16 }}>{error}</p>
+                    <button className="btn btn-primary btn-sm" onClick={() => void handleGenerate()}>
+                      <RefreshCw size={13} /> Retry
+                    </button>
                   </motion.div>
                 )}
                 {!generating && notes && (

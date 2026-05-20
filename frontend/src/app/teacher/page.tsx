@@ -96,8 +96,8 @@ export default function TeacherPage() {
     if (!user?.user_id) return;
     setLoading(true);
     try {
-      const data = await api.listAssignments({ teacher_id: user.user_id });
-      setAssignments(Array.isArray(data) ? data : []);
+      const data = await api.listAssignments({ teacher_id: user.user_id }) as unknown as Assignment[];
+      setAssignments(data);
     } catch {
       setAssignments([]);
     } finally {
@@ -143,7 +143,7 @@ export default function TeacherPage() {
     if (submissions[id]) return;
     setLoadingSubmissions(id);
     try {
-      const data = await api.getAssignmentSubmissions(id);
+      const data = await api.getAssignmentSubmissions(id) as { submissions?: Submission[] };
       setSubmissions((prev) => ({ ...prev, [id]: data.submissions || [] }));
     } catch {
       setSubmissions((prev) => ({ ...prev, [id]: [] }));

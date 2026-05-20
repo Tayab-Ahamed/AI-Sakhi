@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
+import { isTokenExpired } from "@/lib/auth";
 import { getSessionId, getStoredAuth, getStoredUser, SakhiAuth, SakhiUser, saveStoredAuth, saveStoredUser } from "@/lib/user";
 
 type UserContextValue = {
@@ -26,6 +27,13 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!auth?.token) return;
+    // Check token expiry locally first to avoid unnecessary network calls
+    if (isTokenExpired(auth.token)) {
+      setAuthState(null);
+      saveStoredAuth(null);
+      return;
+    }
+    // Optionally verify with backend (non-blocking)
     api.verifyToken({ token: auth.token }).catch(() => {
       setAuthState(null);
       saveStoredAuth(null);
@@ -34,7 +42,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!user?.user_id) return;
-    api.getUser(user.user_id)
+    (api.getUser(user.user_id) as Promise<unknown> as Promise<SakhiUser>)
       .then((fresh) => {
         setUserState(fresh);
         saveStoredUser(fresh);
@@ -57,7 +65,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const refreshUser = async () => {
     if (!user?.user_id) return;
-    const fresh = await api.getUser(user.user_id);
+    const fresh = await api.getUser(user.user_id) as unknown as SakhiUser;
     setUser(fresh, auth);
   };
 
@@ -73,7 +81,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         weak_subject: next.weak_subject,
         role: next.role,
         organization_id: next.organization_id,
-      });
+      }) as unknown as SakhiUser;
       setUser(saved, auth);
       return saved;
     } catch (error) {

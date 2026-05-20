@@ -34,7 +34,7 @@ export default function ExportPage() {
     setLoading(true);
     setError("");
     try {
-      const data = await api.getStudentReportData(user.user_id);
+      const data = await api.getStudentReportData(user.user_id) as ReportData;
       setPreview(data);
     } catch {
       setError("Could not load report data. Is the backend running?");

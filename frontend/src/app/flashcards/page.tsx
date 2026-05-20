@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 import Sidebar from "@/components/Sidebar";
 import { api } from "@/lib/api";
 import { getSubjectsForClass, getTopicsForSubjectAndClass } from "@/lib/curriculum";
 import { useUser } from "@/lib/user-context";
-import { BookOpen, Layers3, RotateCcw, ChevronLeft, ChevronRight, Save, Trash2, Brain, CalendarClock, RefreshCw, CheckCircle2 } from "lucide-react";
+import { Layers3, RotateCcw, ChevronLeft, ChevronRight, Save, Brain, CalendarClock, RefreshCw, CheckCircle2, Shuffle, AlertCircle, BookOpen, Trash2 } from "lucide-react";
 
 type Flashcard = {
   id: number;
@@ -64,6 +64,7 @@ export default function FlashcardsPage() {
   const [deck, setDeck] = useState<FlashcardDeck | null>(null);
   const [savedDecks, setSavedDecks] = useState<SavedArtifact[]>([]);
   const [loading, setLoading] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
   const [currentCard, setCurrentCard] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [activeArtifactId, setActiveArtifactId] = useState<number | null>(null);
@@ -77,7 +78,7 @@ export default function FlashcardsPage() {
   const loadSavedDecks = async (userId?: number) => {
     if (!userId) return;
     try {
-      const result = await api.listArtifacts(userId, "flashcard_set");
+      const result = await api.listArtifacts(userId, "flashcard_set") as { artifacts?: SavedArtifact[] };
       setSavedDecks(result.artifacts || []);
     } catch {
       setSavedDecks([]);
@@ -87,7 +88,7 @@ export default function FlashcardsPage() {
   useEffect(() => {
     if (!user?.user_id) return;
     let ignore = false;
-    api.listArtifacts(user.user_id, "flashcard_set")
+    (api.listArtifacts(user.user_id, "flashcard_set") as Promise<{ artifacts?: SavedArtifact[] }>)
       .then((result) => {
         if (!ignore) setSavedDecks(result.artifacts || []);
       })
@@ -95,7 +96,7 @@ export default function FlashcardsPage() {
         if (!ignore) setSavedDecks([]);
       });
     // Also load due cards count from server
-    api.getDueFlashcards(user.user_id)
+    (api.getDueFlashcards(user.user_id) as Promise<{ stats: { total_cards: number; due_now: number } }>)
       .then((res) => {
         if (!ignore) setDueStats(res.stats);
       })
@@ -114,24 +115,38 @@ export default function FlashcardsPage() {
   const generate = async () => {
     if (!user || !topic.trim()) return;
     setLoading(true);
+    setGenError(null);
     setServerReviewMap({});
     setScheduleMsg("");
     try {
+      // Backend returns the deck object directly (unwrapped from the success/flashcards wrapper)
       const result = await api.generateFlashcards({
         topic: topic.trim(),
         class_: user.class_,
         language: user.language,
         user_id: user.user_id,
-      });
+      }) as FlashcardDeck & { review_state?: Record<string, ReviewEntry> };
       setDeck({ ...result, review_state: result.review_state || {} });
       setCurrentCard(0);
       setFlipped(false);
       setActiveArtifactId(null);
-    } catch {
-      alert("Could not generate flashcards right now.");
+    } catch (err) {
+      setGenError(err instanceof Error ? err.message : "Could not generate flashcards. Please try again.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const shuffleDeck = () => {
+    if (!deck) return;
+    const shuffled = [...deck.cards];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    setDeck({ ...deck, cards: shuffled });
+    setCurrentCard(0);
+    setFlipped(false);
   };
 
   const saveDeck = async () => {
@@ -143,12 +158,11 @@ export default function FlashcardsPage() {
         title: `${deck.topic} flashcards`,
         topic: deck.topic,
         payload: deck as unknown as object,
-      });
+      }) as { id: number };
       setActiveArtifactId(saved.id);
       await loadSavedDecks(user.user_id);
-      alert("Flashcards saved to your library.");
     } catch {
-      alert("Could not save this flashcard set right now.");
+      setGenError("Could not save this flashcard set right now.");
     }
   };
 
@@ -183,13 +197,13 @@ export default function FlashcardsPage() {
           card_id: c.id,
           card_front: c.front,
           card_back: c.back,
-        });
+        }) as { id: number };
         newMap[c.id] = rev.id;
         saved++;
       }
       setServerReviewMap(newMap);
       // Refresh due stats
-      const dueRes = await api.getDueFlashcards(user.user_id);
+      const dueRes = await api.getDueFlashcards(user.user_id) as { stats: { total_cards: number; due_now: number } };
       setDueStats(dueRes.stats);
       setScheduleMsg(saved > 0 ? `${saved} card${saved !== 1 ? "s" : ""} added to your review schedule! 🗓️` : "All cards are already in your schedule.");
     } catch {
@@ -216,7 +230,7 @@ export default function FlashcardsPage() {
       const localRating = quality >= 4 ? "easy" : quality === 3 ? "good" : "again";
       await reviewCard(localRating);
       // Refresh due stats silently
-      api.getDueFlashcards(user.user_id).then((res) => setDueStats(res.stats)).catch(() => {});
+      (api.getDueFlashcards(user.user_id) as Promise<{ stats: { total_cards: number; due_now: number } }>).then((res) => setDueStats(res.stats)).catch(() => {});
     } finally {
       setSavingReview(false);
     }
@@ -361,9 +375,14 @@ export default function FlashcardsPage() {
                   />
                 </div>
 
-                <button className="btn btn-primary btn-full" onClick={generate} disabled={!topic.trim() || loading} style={{ justifyContent: "center" }}>
+                <button className="btn btn-primary btn-full" onClick={generate} disabled={!topic.trim() || loading} style={{ justifyContent: "center", marginBottom: 8 }}>
                   {loading ? "Generating..." : "Generate 6 Flashcards"}
                 </button>
+                {deck && (
+                  <button className="btn btn-secondary btn-full" onClick={shuffleDeck} style={{ justifyContent: "center" }}>
+                    <Shuffle size={13} /> Shuffle Deck
+                  </button>
+                )}
               </div>
 
               <div className="card" style={{ padding: 22 }}>
@@ -391,7 +410,26 @@ export default function FlashcardsPage() {
             </div>
 
             <div>
-              {!deck || !card ? (
+              {loading ? (
+                // Loading skeleton cards
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  <div className="card" style={{ padding: 28, minHeight: 280, background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#e2e8f0", animation: "pulse 1.5s infinite" }} />
+                    <div style={{ width: 200, height: 14, borderRadius: 8, background: "#e2e8f0", animation: "pulse 1.5s infinite" }} />
+                    <div style={{ width: 140, height: 12, borderRadius: 8, background: "#e2e8f0", animation: "pulse 1.5s infinite" }} />
+                    <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 8 }}>Sakhi is creating your flashcards…</p>
+                  </div>
+                </div>
+              ) : genError ? (
+                // Error state
+                <div className="card" style={{ padding: 32, minHeight: 280, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", border: "1.5px solid #fecaca", background: "#fef2f2" }}>
+                  <AlertCircle size={28} style={{ color: "#dc2626", marginBottom: 12 }} />
+                  <p style={{ fontSize: 14, color: "#991b1b", marginBottom: 16 }}>{genError}</p>
+                  <button className="btn btn-primary btn-sm" onClick={generate}>
+                    <RefreshCw size={13} /> Try Again
+                  </button>
+                </div>
+              ) : !deck || !card ? (
                 <div className="card" style={{ padding: 28, minHeight: 420, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
                   <div>
                     <Layers3 size={28} style={{ color: "#cbd5e1", margin: "0 auto 12px" }} />

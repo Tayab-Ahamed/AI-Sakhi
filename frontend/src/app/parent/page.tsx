@@ -53,7 +53,7 @@ export default function ParentPage() {
   useEffect(() => {
     if (!selectedChild) return;
     setLoading(true);
-    api.getStudentReportData(selectedChild)
+    (api.getStudentReportData(selectedChild) as Promise<ChildReport>)
       .then((data) => setReport(data))
       .catch(() => setReport(null))
       .finally(() => setLoading(false));

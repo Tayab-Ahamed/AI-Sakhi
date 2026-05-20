@@ -134,8 +134,9 @@ function setStoredChatSessionId(sessionId: string) {
 }
 
 function getStoredAutoSpeak() {
-  if (typeof window === "undefined") return true;
-  return localStorage.getItem(AUTO_SPEAK_STORAGE_KEY) !== "false";
+  if (typeof window === "undefined") return false;
+  // Default is OFF — only speaks if user has explicitly turned it on
+  return localStorage.getItem(AUTO_SPEAK_STORAGE_KEY) === "true";
 }
 
 function getStoredVoiceUri() {
@@ -223,6 +224,8 @@ export default function ChatPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const messageCounterRef = useRef(0);
+  const inFlightRef = useRef(false);
+  const prevMessageCountRef = useRef(0);
 
   const nextMessageId = (prefix: "u" | "a" | "e") => {
     messageCounterRef.current += 1;
@@ -232,7 +235,7 @@ export default function ChatPage() {
   async function refreshSessions(userId?: number) {
     if (!userId) return;
     try {
-      const result = await api.listChatSessions(userId);
+      const result = await api.listChatSessions(userId) as { sessions?: ChatSessionSummary[] };
       setSessions(result.sessions || []);
     } catch {
       setSessions([]);
@@ -241,7 +244,7 @@ export default function ChatPage() {
 
   async function loadCatalog() {
     try {
-      const result = await api.getRagCatalog();
+      const result = await api.getRagCatalog() as RagCatalog;
       setCatalog(result);
     } catch {
       setCatalog({ ready: false, classes: [], subjects: [], chapters: [], sources: [] });
@@ -252,7 +255,7 @@ export default function ChatPage() {
     if (!userId) return;
     setLoadingHistory(true);
     try {
-      const history = await api.getChatHistory(sessionId);
+      const history = await api.getChatHistory(sessionId) as { messages?: Array<{ role: string; content: string; citations?: Citation[] }> };
       const nextMessages = toUiMessages(history.messages || []);
       setMessages(nextMessages);
       setShowEmpty(nextMessages.length === 0);
@@ -275,9 +278,14 @@ export default function ChatPage() {
     if (isReady && !user) router.push("/onboard");
   }, [isReady, router, user]);
 
+  // Auto-scroll: only scroll to bottom when a NEW message is added (not on every typing state change)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, typing]);
+    const newCount = messages.length;
+    if (newCount > prevMessageCountRef.current || typing) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+    prevMessageCountRef.current = newCount;
+  }, [messages.length, typing]);
 
   useEffect(() => {
     if (!user?.user_id) return;
@@ -400,7 +408,8 @@ export default function ChatPage() {
   };
 
   const sendMessage = async (text: string, simplify = false, level = 0) => {
-    if (!text.trim() || !user || typing) return;
+    if (!text.trim() || !user || typing || inFlightRef.current) return;
+    inFlightRef.current = true;
     setShowEmpty(false);
     if (!simplify) {
       setMessages((current) => [
@@ -422,7 +431,7 @@ export default function ChatPage() {
         weak_subject: user.weak_subject,
         user_id: user.user_id,
         rag_filters: simplify ? undefined : compactFilters(ragFilters),
-      });
+      }) as ChatResponse;
       await appendAiMessage(response, simplify, level);
     } catch {
       const errorMsg: Msg = {
@@ -435,6 +444,7 @@ export default function ChatPage() {
       setLastAiId(errorMsg.id);
     } finally {
       setTyping(false);
+      inFlightRef.current = false;
       textareaRef.current?.focus();
     }
   };
@@ -453,7 +463,7 @@ export default function ChatPage() {
         weak_subject: user.weak_subject,
         translate_to: user.language,
         user_id: user.user_id,
-      });
+      }) as ChatResponse;
       await appendAiMessage(response);
     } catch {
       const errorMsg: Msg = {
@@ -490,7 +500,7 @@ export default function ChatPage() {
     setUploadFile(null);
     setTyping(true);
     try {
-      const data = await api.chatUpload(fileToUpload, user.class_, user.language, user.user_id);
+      const data = await api.chatUpload(fileToUpload, user.class_, user.language, user.user_id) as { response?: string };
       await appendAiMessage({ response: data.response || "Here's what I found in your document." });
     } catch {
       const errorMsg: Msg = {
@@ -568,10 +578,11 @@ export default function ChatPage() {
     return chapter.label.toLowerCase().includes(ragFilters.subject.toLowerCase()) || true;
   });
 
+  	// Main layout — section must be flex col with overflow hidden so the scroll area works
   return (
     <div className="app-shell">
       <Sidebar />
-      <main className="main-content" style={{ display: "flex", minHeight: "100vh" }}>
+      <main className="main-content">
         <aside style={{ width: 300, borderRight: "1px solid var(--border-subtle)", background: "#fafaf9", padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
           <button className="btn btn-primary btn-full" onClick={startNewSession} style={{ justifyContent: "center" }}>
             <Plus size={15} /> New Chat

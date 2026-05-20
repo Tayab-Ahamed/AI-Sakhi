@@ -38,7 +38,7 @@ export default function LeaderboardPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const dashboard = await api.getDashboard(user?.organization_id);
+        const dashboard = await api.getDashboard(user?.organization_id) as { users?: LeaderUser[] };
         const users: LeaderUser[] = dashboard.users || [];
 
         // For each student user, fetch their progress
@@ -46,7 +46,7 @@ export default function LeaderboardPage() {
         const enriched = await Promise.all(
           studentUsers.map(async (u) => {
             try {
-              const prog = await api.getProgress(u.user_id);
+              const prog = await api.getProgress(u.user_id) as { history?: Array<{ score: number; total: number; streak: number }>; streak?: number };
               const history: Array<{ score: number; total: number; streak: number }> = prog.history || [];
               const streak: number = prog.streak || 0;
               const quizzes = history.length;

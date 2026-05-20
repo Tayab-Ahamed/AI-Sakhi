@@ -393,19 +393,19 @@ export default function DashboardPage() {
     const load = async () => {
       try {
         const [progressData, dashboardData, reportData] = await Promise.all([
-          api.getProgress(user.user_id),
-          api.getDashboard(user.organization_id),
-          api.getUserReport(user.user_id),
+          api.getProgress(user.user_id) as Promise<{ history: HistoryItem[]; streak: number }>,
+          api.getDashboard(user.organization_id) as Promise<DashboardMetrics>,
+          api.getUserReport(user.user_id) as Promise<StudentReport>,
         ]);
         setProgress(progressData);
         setDashboard(dashboardData);
         setReport(reportData);
-        const artifactData = await api.listArtifacts(user.user_id);
+        const artifactData = await api.listArtifacts(user.user_id) as { artifacts?: SavedArtifact[] };
         setArtifacts(artifactData.artifacts || []);
         // Phase 8: load recommendations + due flashcards in parallel
         const [recData, dueData] = await Promise.all([
-          api.getRecommendations(user.user_id).catch(() => null),
-          api.getDueFlashcards(user.user_id).catch(() => null),
+          (api.getRecommendations(user.user_id) as Promise<{ next_topics?: Recommendation[]; retry_topic?: RetryTopic | null }>).catch(() => null),
+          (api.getDueFlashcards(user.user_id) as Promise<{ stats?: { due_now: number } }>).catch(() => null),
         ]);
         if (recData) {
           setRecommendations(recData.next_topics || []);
@@ -415,7 +415,7 @@ export default function DashboardPage() {
           setDueFlashcards(dueData.stats.due_now || 0);
         }
         // Phase 10: load pending student assignments
-        const asgData = await api.getStudentAssignments(user.user_id, user.organization_id).catch(() => null);
+        const asgData = await (api.getStudentAssignments(user.user_id, user.organization_id) as unknown as Promise<Array<{ id: number; title: string; topic: string; subject: string; due_date: string | null; difficulty: string; my_submission?: { completed: boolean } }>>).catch(() => null);
         if (asgData) {
           const pending = (Array.isArray(asgData) ? asgData : []).filter(
             // eslint-disable-next-line @typescript-eslint/no-explicit-any

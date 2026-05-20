@@ -60,3 +60,48 @@ def get_rag_stats() -> dict:
         return {"chunk_count": count, "ready": count > 0}
     except Exception:
         return {"chunk_count": 0, "ready": False}
+
+
+def get_rag_catalog() -> dict:
+    """Return the catalog of available classes, subjects, chapters, and sources in the RAG index."""
+    try:
+        col = get_collection()
+        count = col.count()
+        if count == 0:
+            return {"ready": False, "classes": [], "subjects": [], "chapters": [], "sources": []}
+
+        # Fetch all metadata (up to 10,000 items — adjust if corpus is larger)
+        result = col.get(limit=min(count, 10000), include=["metadatas"])
+        metadatas = result.get("metadatas") or []
+
+        classes_map: dict[str, int] = {}
+        subjects_map: dict[str, int] = {}
+        chapters_map: dict[str, int] = {}
+        sources_map: dict[str, int] = {}
+
+        for meta in metadatas:
+            if not meta:
+                continue
+            for key, mapping in [
+                ("class_level", classes_map),
+                ("subject", subjects_map),
+                ("chapter", chapters_map),
+                ("source", sources_map),
+            ]:
+                val = str(meta.get(key, "")).strip()
+                if val:
+                    mapping[val] = mapping.get(val, 0) + 1
+
+        def to_list(m: dict) -> list:
+            return sorted([{"label": k, "count": v} for k, v in m.items()], key=lambda x: x["label"])
+
+        return {
+            "ready": True,
+            "classes": to_list(classes_map),
+            "subjects": to_list(subjects_map),
+            "chapters": to_list(chapters_map),
+            "sources": to_list(sources_map),
+        }
+    except Exception as exc:
+        print(f"[RAG] Catalog error: {exc}")
+        return {"ready": False, "classes": [], "subjects": [], "chapters": [], "sources": []}

@@ -6,11 +6,12 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Optional
+from typing import List, Optional
 
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Security, UploadFile, Cookie, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from backend.auth import issue_session_token, logout_session_token, verify_session_token
@@ -33,15 +34,48 @@ from backend.db import (
     update_user,
 )
 from backend.language import normalize_language
+from backend.flashcards import generate_flashcards
 from backend.quiz import evaluate_answer, generate_quiz
-from backend.rag import get_rag_stats
+from backend.rag import get_rag_catalog, get_rag_stats
+from backend.study_notes import generate_study_notes
 from backend.study_plan import generate_study_plan
 
-app = FastAPI(title="AI Sakhi API", version="1.3.0")
+app = FastAPI(title="AI Sakhi API", version="1.4.0")
 
+_bearer = HTTPBearer(auto_error=False)
+
+
+def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(_bearer),
+    sakhi_token: Optional[str] = Cookie(None)
+) -> Optional[dict]:
+    """Dependency: returns decoded token payload if a valid Bearer token is supplied or secure cookie is present, else None."""
+    token = None
+    if credentials:
+        token = credentials.credentials
+    elif sakhi_token:
+        token = sakhi_token
+    if not token:
+        return None
+    from backend.auth import verify_session_token
+    return verify_session_token(token)
+
+
+def require_roles(*roles: str):
+    """Factory: returns a FastAPI dependency that raises 403 unless the token role is in *roles."""
+    def _dep(token_data: Optional[dict] = Depends(get_current_user)):
+        if not token_data:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        if token_data.get("role") not in roles:
+            raise HTTPException(status_code=403, detail=f"Role must be one of: {list(roles)}")
+        return token_data
+    return _dep
+
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -108,6 +142,21 @@ class StudyPlanRequest(BaseModel):
     user_id: Optional[int] = None
 
 
+class StudyNotesRequest(BaseModel):
+    topic: str
+    class_: str = "8"
+    language: str = "English"
+    subject: str = ""
+    user_id: Optional[int] = None
+
+
+class FlashcardsRequest(BaseModel):
+    topic: str
+    class_: str = "8"
+    language: str = "English"
+    user_id: Optional[int] = None
+
+
 class ProgressUpdate(BaseModel):
     user_id: int
     topic: str
@@ -126,7 +175,7 @@ class TokenVerifyRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {"message": "AI Sakhi API is running", "version": "1.3.0"}
+    return {"message": "AI Sakhi API is running", "version": "1.4.0"}
 
 
 @app.get("/health")
@@ -134,7 +183,7 @@ def api_health():
     rag = get_rag_stats()
     return {
         "status": "ok",
-        "version": "1.3.0",
+        "version": "1.4.0",
         "model": GROQ_MODEL,
         "database": {"path": os.path.basename(DB_PATH), "configured": bool(DB_PATH)},
         "rag": rag,
@@ -142,8 +191,15 @@ def api_health():
 
 
 @app.post("/auth/token")
-def api_issue_token(req: TokenRequest):
+def api_issue_token(req: TokenRequest, response: Response):
     token = issue_session_token(req.user_id, req.expires_in_hours)
+    response.set_cookie(
+        key="sakhi_token",
+        value=token["token"],
+        httponly=True,
+        samesite="lax",
+        max_age=req.expires_in_hours * 3600
+    )
     return token
 
 
@@ -156,13 +212,16 @@ def api_verify_token(req: TokenVerifyRequest):
 
 
 @app.post("/auth/logout")
-def api_logout(req: TokenVerifyRequest):
-    logout_session_token(req.token)
+def api_logout(req: TokenVerifyRequest, response: Response, sakhi_token: Optional[str] = Cookie(None)):
+    token = req.token or sakhi_token
+    if token:
+        logout_session_token(token)
+    response.delete_cookie(key="sakhi_token")
     return {"message": "Logged out"}
 
 
 @app.post("/user/create")
-def api_create_user(req: UserCreate):
+def api_create_user(req: UserCreate, response: Response):
     user_id = create_user(
         req.name,
         req.class_,
@@ -174,6 +233,13 @@ def api_create_user(req: UserCreate):
     user = get_user_with_org(user_id)
     log_event("user_created", user_id=user_id, metadata={"language": normalize_language(req.language), "class_": req.class_, "role": req.role})
     token = issue_session_token(user_id)
+    response.set_cookie(
+        key="sakhi_token",
+        value=token["token"],
+        httponly=True,
+        samesite="lax",
+        max_age=24 * 3600
+    )
     return {"user_id": user_id, "message": f"Welcome, {req.name}!", "auth": token, **(user or {})}
 
 
@@ -321,9 +387,11 @@ def api_clear_chat(session_id: str):
 
 @app.get("/chat/history/{session_id}")
 def api_chat_history(session_id: str):
+    """Return chat history for a session. Returns empty messages for new/unknown sessions (never 404)."""
     history = get_chat_history(session_id)
     if not history:
-        raise HTTPException(status_code=404, detail="Session not found")
+        # New session — return empty message list so frontend can start fresh
+        return {"session_id": session_id, "messages": [], "profile": {}}
     return history
 
 
@@ -383,6 +451,49 @@ def api_user_report(user_id: int):
 @app.get("/rag/stats")
 def api_rag_stats():
     return get_rag_stats()
+
+
+@app.get("/rag/catalog")
+def api_rag_catalog():
+    """Return the RAG catalog (classes, subjects, chapters available in the vector store)."""
+    return get_rag_catalog()
+
+
+# ── Study Notes ──────────────────────────────────────────────────────────────
+
+@app.post("/study-notes/generate")
+def api_generate_study_notes(req: StudyNotesRequest):
+    """Generate structured markdown study notes for a topic using AI."""
+    try:
+        notes_md = generate_study_notes(
+            topic=req.topic,
+            class_=req.class_,
+            language=req.language,
+            subject=req.subject,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    if req.user_id:
+        log_event("study_notes_generated", user_id=req.user_id, metadata={"topic": req.topic, "language": normalize_language(req.language)})
+    return {"notes_md": notes_md, "topic": req.topic}
+
+
+# ── Flashcards ───────────────────────────────────────────────────────────────
+
+@app.post("/flashcards/generate")
+def api_generate_flashcards(req: FlashcardsRequest):
+    """Generate a set of flashcards for a topic using AI."""
+    result = generate_flashcards(
+        topic=req.topic,
+        class_=req.class_,
+        language=req.language,
+    )
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=result.get("error", "Flashcard generation failed"))
+    if req.user_id:
+        log_event("flashcards_generated", user_id=req.user_id, metadata={"topic": req.topic, "language": normalize_language(req.language)})
+    # Return the flashcard deck directly (unwrap from the success wrapper)
+    return result["flashcards"]
 
 
 @app.get("/dashboard")

@@ -1,13 +1,14 @@
 """
-Phase 15 — AI Study Notes Generator
+AI Sakhi — Study Notes Generator
 Generates structured markdown study notes for a given topic using Groq LLM.
 """
 from __future__ import annotations
 
 import os
-from groq import Groq
-from backend.config import GROQ_MODEL
 
+from groq import Groq
+
+from backend.config import GROQ_MODEL
 
 NOTE_SYSTEM_PROMPT = """You are Sakhi, a patient and knowledgeable tutor for Indian students (KG to Class 12).
 Generate clear, structured study notes in the following markdown format:
@@ -36,7 +37,7 @@ Keep the language friendly and encouraging. Use Indian educational context where
 Respond ONLY with the markdown — no preamble."""
 
 
-async def generate_study_notes(
+def generate_study_notes(
     topic: str,
     class_: str = "8",
     language: str = "English",
@@ -44,17 +45,18 @@ async def generate_study_notes(
 ) -> str:
     """
     Generate structured markdown study notes for the given topic.
-    Returns the raw markdown string.
+    Returns the raw markdown string. Raises on error.
     """
     client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
     subject_hint = f" (Subject: {subject})" if subject else ""
-    user_msg = f"Create study notes for Class {class_} students on: {topic}{subject_hint}"
+    lang_note = f" Respond in {language}." if language and language.lower() != "english" else ""
+    user_msg = f"Create study notes for Class {class_} students on: {topic}{subject_hint}{lang_note}"
 
     resp = client.chat.completions.create(
         model=GROQ_MODEL,
         messages=[
             {"role": "system", "content": NOTE_SYSTEM_PROMPT},
-            {"role": "user",   "content": user_msg},
+            {"role": "user", "content": user_msg},
         ],
         temperature=0.4,
         max_tokens=1800,

@@ -43,8 +43,8 @@ export default function OnboardPage() {
   const submit = async () => {
     setLoading(true);
     try {
-      const res = await api.createUser(form);
-      setUser({ ...res, ...form }, res.auth || null);
+      const res = await api.createUser(form) as { user_id: number; auth?: any } & Record<string, unknown>;
+      setUser({ ...res, ...form } as any, res.auth || null);
       router.push("/chat");
     } catch {
       alert("Cannot reach backend. Make sure FastAPI is running on port 8000.");
