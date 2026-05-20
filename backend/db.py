@@ -118,6 +118,7 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_events_user_time ON learning_events(user_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_time ON chat_sessions(user_id, updated_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_org_role ON users(organization_id, role)")
+    _ensure_column(cur, "users", "password_hash", "TEXT")
     conn.commit()
     conn.close()
 
@@ -533,3 +534,84 @@ def get_student_report(user_id: int) -> dict | None:
         "weak_topics": [row["topic"] for row in weak_topics],
         "generated_at": now_iso(),
     }
+
+
+def set_user_password(user_id: int, password_hash: str):
+    """Store a bcrypt password hash for the user."""
+    conn = get_connection()
+    _ensure_column(conn.cursor(), "users", "password_hash", "TEXT")
+    conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+    conn.commit()
+    conn.close()
+
+
+def get_user_by_name(name: str) -> dict | None:
+    """Look up a user by name (case-insensitive). Returns first match."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_column(cur, "users", "password_hash", "TEXT")
+    row = cur.execute(
+        "SELECT * FROM users WHERE LOWER(name) = LOWER(?)",
+        (name,),
+    ).fetchone()
+    conn.close()
+    return _user_from_row(row)
+
+
+def get_user_password_hash(user_id: int) -> str | None:
+    """Get the stored password hash for a user."""
+    conn = get_connection()
+    cur = conn.cursor()
+    _ensure_column(cur, "users", "password_hash", "TEXT")
+    row = cur.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,)).fetchone()
+    conn.close()
+    return row["password_hash"] if row else None
+
+
+def get_topic_mastery(user_id: int) -> list[dict]:
+    """Aggregate per-topic mastery % from quiz history."""
+    conn = get_connection()
+    cur = conn.cursor()
+    rows = cur.execute(
+        """
+        SELECT topic,
+               COUNT(*) as attempts,
+               ROUND(AVG(CAST(score AS FLOAT) / NULLIF(total, 0)) * 100, 1) as avg_pct,
+               MAX(timestamp) as last_attempted
+        FROM progress
+        WHERE user_id = ?
+        GROUP BY topic
+        ORDER BY avg_pct ASC
+        """,
+        (user_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_user_xp(user_id: int) -> int:
+    """Calculate total XP earned by a user from learning events."""
+    conn = get_connection()
+    cur = conn.cursor()
+    XP_MAP = {
+        "progress_updated": 10,
+        "study_notes_generated": 5,
+        "flashcards_generated": 3,
+        "study_plan_generated": 4,
+        "chat_message": 1,
+    }
+    total = 0
+    for event_type, xp in XP_MAP.items():
+        row = cur.execute(
+            "SELECT COUNT(*) as cnt FROM learning_events WHERE user_id = ? AND event_type = ?",
+            (user_id, event_type),
+        ).fetchone()
+        total += (row["cnt"] or 0) * xp
+    # Bonus XP for streaks: 15 XP per streak day
+    streak_row = cur.execute(
+        "SELECT MAX(streak) as best_streak FROM progress WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    total += (streak_row["best_streak"] or 0) * 15
+    conn.close()
+    return total

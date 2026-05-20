@@ -3,26 +3,34 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { MessageSquare, Zap, LayoutDashboard, BookOpen, Plus, LogOut, Globe, Timer, Trophy, Presentation, Layers3, Eye, Zap as ZapIcon, Type, GraduationCap, Users, Shield, FileText, FileDown } from "lucide-react";
+import {
+  MessageSquare, Zap, LayoutDashboard, BookOpen, Plus, LogOut, Globe, Timer,
+  Trophy, Presentation, Layers3, Eye, Zap as ZapIcon, Type, GraduationCap,
+  Users, Shield, FileText, FileDown, Moon, Sun, User, BarChart2, ClipboardList,
+} from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useAccessibility } from "@/lib/accessibility-context";
 import { useUser } from "@/lib/user-context";
+import NotificationCenter from "@/components/NotificationCenter";
+import { toggleTheme, initTheme, getTheme, type Theme } from "@/lib/theme";
 
 const NAV = [
-  { href: "/chat",         icon: MessageSquare,  label: "Chat",            roles: null },
-  { href: "/quiz",         icon: Zap,            label: "Quiz",            roles: null },
-  { href: "/dashboard",    icon: LayoutDashboard, label: "Dashboard",      roles: null },
-  { href: "/leaderboard",  icon: Trophy,         label: "Leaderboard",     roles: null },
-  { href: "/study-plan",   icon: BookOpen,       label: "Study Plan",      roles: null },
-  { href: "/study-notes",  icon: FileText,       label: "Study Notes",     roles: null },
-  { href: "/flashcards",   icon: Layers3,        label: "Flashcards",      roles: null },
-  { href: "/focus-timer",  icon: Timer,          label: "Focus Timer",     roles: null },
-  { href: "/export",       icon: FileDown,       label: "Export Report",   roles: null },
-  { href: "/teacher",      icon: GraduationCap,  label: "Teacher Tools",   roles: ["teacher", "admin"] },
-  { href: "/parent",       icon: Users,          label: "Parent View",     roles: ["parent", "admin"] },
-  { href: "/admin",        icon: Shield,         label: "Admin Console",   roles: ["admin"] },
-  { href: "/demo",         icon: Presentation,   label: "Demo Mode",       roles: null },
+  { href: "/chat",           icon: MessageSquare,  label: "Chat",              roles: null },
+  { href: "/quiz",           icon: Zap,            label: "Quiz",              roles: null },
+  { href: "/dashboard",      icon: LayoutDashboard, label: "Dashboard",        roles: null },
+  { href: "/leaderboard",    icon: Trophy,         label: "Leaderboard",       roles: null },
+  { href: "/mastery",        icon: BarChart2,      label: "Topic Mastery",     roles: null },
+  { href: "/study-plan",     icon: BookOpen,       label: "Study Plan",        roles: null },
+  { href: "/study-notes",    icon: FileText,       label: "Study Notes",       roles: null },
+  { href: "/practice-paper", icon: ClipboardList,  label: "Practice Paper",    roles: null },
+  { href: "/flashcards",     icon: Layers3,        label: "Flashcards",        roles: null },
+  { href: "/focus-timer",    icon: Timer,          label: "Focus Timer",       roles: null },
+  { href: "/export",         icon: FileDown,       label: "Export Report",     roles: null },
+  { href: "/teacher",        icon: GraduationCap,  label: "Teacher Tools",     roles: ["teacher", "admin"] },
+  { href: "/parent",         icon: Users,          label: "Parent View",       roles: ["parent", "admin"] },
+  { href: "/admin",          icon: Shield,         label: "Admin Console",     roles: ["admin"] },
+  { href: "/demo",           icon: Presentation,   label: "Demo Mode",         roles: null },
 ];
 
 const LANGUAGES = ["English", "Hinglish", "Hindi", "Kannada", "Tamil"] as const;
@@ -34,8 +42,14 @@ export default function Sidebar() {
   const [ragReady, setRagReady] = useState<boolean | null>(null);
   const [ragChunks, setRagChunks] = useState(0);
   const [seedingDemo, setSeedingDemo] = useState(false);
+  const [theme, setThemeState] = useState<Theme>("light");
   const { user, updateProfile, clearUser } = useUser();
   const { dyslexiaMode, reduceMotion, fontSize, toggleDyslexia, toggleReduceMotion, setFontSize } = useAccessibility();
+
+  useEffect(() => {
+    initTheme();
+    setThemeState(getTheme());
+  }, []);
 
   useEffect(() => {
     let ignore = false;
@@ -50,9 +64,7 @@ export default function Sidebar() {
         setRagReady(false);
         setRagChunks(0);
       });
-    return () => {
-      ignore = true;
-    };
+    return () => { ignore = true; };
   }, []);
 
   const handleLangChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -72,11 +84,7 @@ export default function Sidebar() {
   const handleNewSession = async () => {
     const chatSessionId = typeof window !== "undefined" ? localStorage.getItem("sakhi_chat_session_id") : null;
     if (chatSessionId) {
-      try {
-        await api.clearChat(chatSessionId);
-      } catch {
-        // Local reset is still enough for the user to start fresh.
-      }
+      try { await api.clearChat(chatSessionId); } catch { /* ok */ }
       localStorage.removeItem("sakhi_chat_session_id");
     }
     router.push("/chat");
@@ -104,10 +112,17 @@ export default function Sidebar() {
     }
   };
 
+  const handleToggleTheme = () => {
+    const next = toggleTheme();
+    setThemeState(next);
+  };
+
+  const isDark = theme === "dark";
+
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
-        <span style={{ fontSize: 22 }}>S</span>
+        <span style={{ fontSize: 22 }}>🌸</span>
         <span>AI Sakhi</span>
       </div>
 
@@ -143,10 +158,40 @@ export default function Sidebar() {
         </select>
       </div>
 
-      {/* Phase 9 — Accessibility Settings */}
+      {/* Accessibility Settings */}
       <div style={{ marginBottom: 12 }}>
         <div className="sidebar-section-label" style={{ paddingTop: 0 }}>Accessibility</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {/* Dark Mode */}
+          <button
+            onClick={handleToggleTheme}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "7px 10px", borderRadius: "var(--radius-md)",
+              border: `1.5px solid ${isDark ? "#6366f1" : "var(--border)"}`,
+              background: isDark ? "#1e1b4b" : "white",
+              cursor: "pointer", fontSize: 12, fontWeight: 500,
+              color: isDark ? "#a5b4fc" : "var(--text-secondary)",
+              fontFamily: "Inter, sans-serif",
+              transition: "all 0.15s",
+            }}
+          >
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {isDark ? <Moon size={13} /> : <Sun size={13} />} Dark Mode
+            </span>
+            <span style={{
+              width: 28, height: 16, borderRadius: 99, display: "flex", alignItems: "center",
+              background: isDark ? "#6366f1" : "#d1d5db",
+              padding: "0 2px", transition: "background 0.2s",
+            }}>
+              <span style={{
+                width: 12, height: 12, borderRadius: "50%", background: "white",
+                transform: isDark ? "translateX(12px)" : "translateX(0)",
+                transition: "transform 0.2s",
+              }} />
+            </span>
+          </button>
+
           {/* Dyslexia Mode */}
           <button
             onClick={toggleDyslexia}
@@ -157,8 +202,7 @@ export default function Sidebar() {
               background: dyslexiaMode ? "#fef3c7" : "white",
               cursor: "pointer", fontSize: 12, fontWeight: 500,
               color: dyslexiaMode ? "#92400e" : "var(--text-secondary)",
-              fontFamily: "Inter, sans-serif",
-              transition: "all 0.15s",
+              fontFamily: "Inter, sans-serif", transition: "all 0.15s",
             }}
           >
             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -187,8 +231,7 @@ export default function Sidebar() {
               background: reduceMotion ? "#eef2ff" : "white",
               cursor: "pointer", fontSize: 12, fontWeight: 500,
               color: reduceMotion ? "#4338ca" : "var(--text-secondary)",
-              fontFamily: "Inter, sans-serif",
-              transition: "all 0.15s",
+              fontFamily: "Inter, sans-serif", transition: "all 0.15s",
             }}
           >
             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -215,8 +258,7 @@ export default function Sidebar() {
                 key={s}
                 onClick={() => setFontSize(s)}
                 style={{
-                  flex: 1,
-                  padding: "4px 0",
+                  flex: 1, padding: "4px 0",
                   borderRadius: "var(--radius-sm)",
                   border: `1.5px solid ${fontSize === s ? "var(--emerald)" : "var(--border)"}`,
                   background: fontSize === s ? "var(--emerald-light)" : "white",
@@ -224,8 +266,7 @@ export default function Sidebar() {
                   fontSize: s === "sm" ? 10 : s === "lg" ? 15 : 12,
                   fontWeight: 600,
                   color: fontSize === s ? "var(--emerald-dark)" : "var(--text-muted)",
-                  fontFamily: "Inter, sans-serif",
-                  transition: "all 0.15s",
+                  fontFamily: "Inter, sans-serif", transition: "all 0.15s",
                 }}
               >
                 A{s === "sm" ? "−" : s === "lg" ? "+" : ""}
@@ -241,10 +282,10 @@ export default function Sidebar() {
         <button className="btn btn-secondary btn-full" onClick={handleSeedDemo} disabled={seedingDemo} style={{ justifyContent: "center" }}>
           {seedingDemo ? "Loading demo data..." : "Load Demo Data"}
         </button>
-        <div style={{ padding: "10px 8px", background: "#f5f5f3", borderRadius: "var(--radius-md)" }}>
+        <div style={{ padding: "10px 8px", background: "var(--bg-app)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)" }}>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 2 }}>NCERT RAG</div>
           <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-            {ragReady === null ? "Checking index status..." : ragReady ? `${ragChunks} chunks ready` : "Not loaded. Run ingest.py."}
+            {ragReady === null ? "Checking..." : ragReady ? `${ragChunks} chunks ready` : "Not loaded. Run ingest.py."}
           </div>
         </div>
       </div>
@@ -267,7 +308,7 @@ export default function Sidebar() {
       <div className="sidebar-divider" />
 
       {user?.name && (
-        <div style={{ padding: "10px 8px", background: "#f5f5f3", borderRadius: "var(--radius-md)", marginBottom: 8 }}>
+        <div style={{ padding: "10px 8px", background: "var(--bg-app)", borderRadius: "var(--radius-md)", marginBottom: 8, border: "1px solid var(--border-subtle)" }}>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 2 }}>Signed in as</div>
           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{user.name}</div>
           <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>Class {user.class_} · {user.weak_subject}</div>
@@ -276,6 +317,12 @@ export default function Sidebar() {
       )}
 
       <div className="sidebar-bottom" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+          <Link href="/profile" className={`nav-item ${path === "/profile" ? "active" : ""}`} style={{ flex: 1 }}>
+            <User size={15} /> Profile
+          </Link>
+          <NotificationCenter />
+        </div>
         <button className="nav-item" onClick={handleLogout}>
           <LogOut size={15} />
           Change Profile

@@ -12,3 +12,5 @@ deep-translator
 requests
 httpx
 pydantic
+bcrypt
+slowapi

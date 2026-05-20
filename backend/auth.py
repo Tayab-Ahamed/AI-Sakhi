@@ -17,6 +17,21 @@ _SECRET = os.environ.get("SAKHI_JWT_SECRET", "sakhi-dev-secret-change-in-product
 _ALGORITHM = "HS256"
 
 
+def hash_password(plain: str) -> str:
+    """Hash a plain-text password using bcrypt."""
+    import bcrypt
+    return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    """Verify a plain-text password against a bcrypt hash."""
+    import bcrypt
+    try:
+        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
+
+
 def issue_session_token(user_id: int, expires_in_hours: int = 24) -> dict:
     """Issue a JWT-signed session token and persist it in the DB."""
     from backend.db import get_user_with_org

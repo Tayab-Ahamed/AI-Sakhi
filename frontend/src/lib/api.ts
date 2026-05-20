@@ -245,4 +245,95 @@ export const api = {
 
   getAssignmentSubmissions: (assignmentId: number) =>
     apiFetch(`/assignments/${assignmentId}/submissions`),
+
+  // ── Auth: Password Login ──────────────────────────────────────────────────
+  login: (data: { name: string; password: string }) =>
+    apiFetch("/auth/login", { method: "POST", body: JSON.stringify(data) }),
+
+  // ── Practice Paper ────────────────────────────────────────────────────────
+  generatePracticePaper: (data: { topic: string; class_: string; subject?: string; language?: string; num_questions?: number; user_id?: number }) =>
+    apiFetch("/practice-paper/generate", { method: "POST", body: JSON.stringify(data) }),
+
+  // ── Gamification / XP ─────────────────────────────────────────────────────
+  getUserXP: (userId: number) => apiFetch(`/gamification/xp/${userId}`),
+
+  // ── Analytics ─────────────────────────────────────────────────────────────
+  getTopicMastery: (userId: number) => apiFetch(`/analytics/mastery/${userId}`),
+  logSessionEnd: (data: { user_id: number; module: string; duration_seconds: number }) =>
+    apiFetch("/analytics/session-end", { method: "POST", body: JSON.stringify(data) }),
+  getStudyTime: (userId: number) => apiFetch(`/analytics/study-time/${userId}`),
+
+  // ── Notifications ─────────────────────────────────────────────────────────
+  getNotifications: (userId: number) => apiFetch(`/notifications/${userId}`),
 };
+
+// ── Streaming Chat via SSE ────────────────────────────────────────────────────
+
+export async function streamChat(
+  data: {
+    session_id: string;
+    message: string;
+    class_: string;
+    language?: string;
+    user_name?: string;
+    weak_subject?: string;
+    user_id?: number;
+    organization_id?: number;
+  },
+  onChunk: (chunk: string) => void,
+  onDone: (fullText: string) => void,
+  onError?: (err: string) => void
+): Promise<void> {
+  const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const token = (() => {
+    try {
+      const raw = localStorage.getItem("sakhi_auth");
+      if (!raw) return null;
+      return (JSON.parse(raw) as { token?: string }).token || null;
+    } catch { return null; }
+  })();
+
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  try {
+    const res = await fetch(`${BASE_URL}/chat/stream`, {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: JSON.stringify(data),
+    });
+
+    if (!res.ok || !res.body) {
+      onError?.(`HTTP ${res.status}`);
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = "";
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const content = line.slice(6);
+          if (content === "[DONE]") {
+            onDone(fullText);
+            return;
+          }
+          fullText += content;
+          onChunk(content);
+        }
+      }
+    }
+    onDone(fullText);
+  } catch (err: unknown) {
+    onError?.(err instanceof Error ? err.message : "Stream error");
+  }
+}

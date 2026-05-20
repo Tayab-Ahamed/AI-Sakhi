@@ -7,8 +7,10 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import Sidebar from "@/components/Sidebar";
-import { api } from "@/lib/api";
+import TourGuide from "@/components/TourGuide";
+import { api, streamChat } from "@/lib/api";
 import { useUser } from "@/lib/user-context";
+import { startTimer, stopTimer } from "@/lib/session-timer";
 import { getLocalizedGreeting, getSpeechLang, getSpeechVoicePrefixes } from "@/lib/user";
 import { Send, ChevronDown, Zap, Languages, Mic, MicOff, Paperclip, X, Volume2, Plus, Pencil, Trash2, History, VolumeX, BookMarked, Filter, FileText } from "lucide-react";
 
@@ -227,6 +229,13 @@ export default function ChatPage() {
   const inFlightRef = useRef(false);
   const prevMessageCountRef = useRef(0);
 
+  // Session timer
+  useEffect(() => {
+    if (!user?.user_id) return;
+    startTimer("chat", user.user_id);
+    return () => stopTimer();
+  }, [user?.user_id]);
+
   const nextMessageId = (prefix: "u" | "a" | "e") => {
     messageCounterRef.current += 1;
     return `${prefix}${messageCounterRef.current}`;
@@ -420,6 +429,65 @@ export default function ChatPage() {
     setInput("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setTyping(true);
+
+    // Use SSE streaming for regular messages, fallback to normal for simplify
+    if (!simplify) {
+      const aiMsgId = nextMessageId("a");
+      // Insert empty AI bubble immediately so it streams in
+      setMessages((current) => [
+        ...current,
+        { role: "ai", text: "", id: aiMsgId, time: getTimeLabel(), citations: [] },
+      ]);
+      setLastAiId(aiMsgId);
+
+      await streamChat(
+        {
+          session_id: chatSessionId,
+          message: text.trim(),
+          class_: user.class_,
+          language: user.language,
+          user_name: user.name,
+          weak_subject: user.weak_subject,
+          user_id: user.user_id,
+        },
+        (chunk) => {
+          // Append chunk to the streaming bubble
+          setMessages((current) =>
+            current.map((m) =>
+              m.id === aiMsgId ? { ...m, text: m.text + chunk } : m
+            )
+          );
+          setTyping(false); // Stop typing indicator once first token arrives
+          bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+        },
+        async (fullText) => {
+          setMessages((current) =>
+            current.map((m) =>
+              m.id === aiMsgId ? { ...m, text: fullText, time: getTimeLabel() } : m
+            )
+          );
+          if (user?.user_id) await refreshSessions(user.user_id);
+          if (autoSpeak) speakText(fullText);
+          setTyping(false);
+          inFlightRef.current = false;
+          textareaRef.current?.focus();
+        },
+        (err) => {
+          setMessages((current) =>
+            current.map((m) =>
+              m.id === aiMsgId
+                ? { ...m, text: `I'm having trouble connecting right now. (${err})` }
+                : m
+            )
+          );
+          setTyping(false);
+          inFlightRef.current = false;
+        }
+      );
+      return; // async handled inside callbacks
+    }
+
+    // Simplify path — uses regular (non-streaming) API
     try {
       const response = await api.chat({
         session_id: chatSessionId,
@@ -430,7 +498,6 @@ export default function ChatPage() {
         user_name: user.name,
         weak_subject: user.weak_subject,
         user_id: user.user_id,
-        rag_filters: simplify ? undefined : compactFilters(ragFilters),
       }) as ChatResponse;
       await appendAiMessage(response, simplify, level);
     } catch {
@@ -581,6 +648,7 @@ export default function ChatPage() {
   	// Main layout — section must be flex col with overflow hidden so the scroll area works
   return (
     <div className="app-shell">
+      <TourGuide />
       <Sidebar />
       <main className="main-content">
         <aside style={{ width: 300, borderRight: "1px solid var(--border-subtle)", background: "#fafaf9", padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>

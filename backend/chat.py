@@ -207,3 +207,68 @@ def chat(
         return ai_response
     except Exception as exc:
         return f"Oops! Something went wrong. Please try again in a moment. (Error: {str(exc)[:60]})"
+
+
+def stream_chat(
+    session_id: str,
+    user_message: str,
+    class_: str = "8",
+    selected_language: str = "English",
+    user_name: str = "",
+    weak_subject: str = "",
+    user_id: int | None = None,
+    organization_id: int | None = None,
+):
+    """
+    Generator that streams chat tokens one by one using Groq's streaming API.
+    Yields strings (token chunks). Saves completed message to session on finish.
+    """
+    session = get_session(session_id, selected_language, class_, user_name, weak_subject, user_id, organization_id)
+    messages = session["messages"]
+    response_language = normalize_language(selected_language)
+
+    context = retrieve_context(user_message) if is_rag_ready() else ""
+    if context:
+        prompt = (
+            f"Relevant NCERT textbook content:\n---\n{context}\n---\n\n"
+            f"Based on the above, answer this Class {class_} student's question in {response_language}:\n"
+            f"{user_message}\n\n"
+            f"Remember: short answer, one example, warm tone. {language_instruction(response_language)}"
+        )
+    else:
+        prompt = f"{language_instruction(response_language)}\n\nStudent message:\n{user_message}"
+
+    model_messages = messages + [{"role": "user", "content": prompt}]
+
+    full_response = ""
+    try:
+        stream = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=model_messages,
+            max_tokens=500,
+            temperature=0.7,
+            stream=True,
+        )
+        for chunk in stream:
+            delta = chunk.choices[0].delta.content or ""
+            if delta:
+                full_response += delta
+                yield delta
+
+        # Persist to session after streaming completes
+        messages.append({"role": "user", "content": user_message})
+        messages.append({"role": "assistant", "content": full_response})
+        if len(messages) > 21:
+            messages = [messages[0]] + messages[-20:]
+        session["messages"] = messages
+        save_chat_session(session_id, session["messages"], session["profile"])
+        touch_user_activity(user_id)
+        log_event(
+            "chat_message",
+            user_id=user_id,
+            session_id=session_id,
+            metadata={"language": response_language, "simplify": False, "translate": False, "streamed": True},
+        )
+    except Exception as exc:
+        yield f"\n\n[Error: {str(exc)[:80]}]"
+

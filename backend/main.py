@@ -13,6 +13,10 @@ from fastapi import Depends, FastAPI, File, HTTPException, Security, UploadFile,
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi.responses import StreamingResponse
 
 from backend.auth import issue_session_token, logout_session_token, verify_session_token
 from backend.chat import chat, clear_session
@@ -41,6 +45,10 @@ from backend.study_notes import generate_study_notes
 from backend.study_plan import generate_study_plan
 
 app = FastAPI(title="AI Sakhi API", version="1.4.0")
+
+limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -95,6 +103,7 @@ class UserCreate(BaseModel):
     weak_subject: str = ""
     role: str = "student"
     organization_id: Optional[int] = None
+    password: Optional[str] = None
 
 
 class UserUpdate(BaseModel):
@@ -173,6 +182,17 @@ class TokenVerifyRequest(BaseModel):
     token: str
 
 
+class LoginRequest(BaseModel):
+    name: str
+    password: str
+
+
+class SessionEndRequest(BaseModel):
+    user_id: int
+    module: str
+    duration_seconds: int
+
+
 @app.get("/")
 def root():
     return {"message": "AI Sakhi API is running", "version": "1.4.0"}
@@ -230,6 +250,10 @@ def api_create_user(req: UserCreate, response: Response):
         role=req.role,
         organization_id=req.organization_id,
     )
+    if req.password:
+        from backend.auth import hash_password
+        from backend.db import set_user_password
+        set_user_password(user_id, hash_password(req.password))
     user = get_user_with_org(user_id)
     log_event("user_created", user_id=user_id, metadata={"language": normalize_language(req.language), "class_": req.class_, "role": req.role})
     token = issue_session_token(user_id)
@@ -503,6 +527,204 @@ def api_dashboard(organization_id: Optional[int] = None):
     if organization_id:
         users = [user for user in users if user.get("organization_id") == organization_id]
     return {**metrics, "users": users}
+
+
+@app.post("/auth/login")
+def api_login(req: LoginRequest, response: Response):
+    """Login with name + password. Returns JWT cookie."""
+    from backend.db import get_user_by_name, get_user_password_hash
+    from backend.auth import verify_password
+    user = get_user_by_name(req.name)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid name or password")
+    stored_hash = get_user_password_hash(user["user_id"])
+    if not stored_hash:
+        raise HTTPException(status_code=401, detail="This account has no password set. Please re-register.")
+    if not verify_password(req.password, stored_hash):
+        raise HTTPException(status_code=401, detail="Invalid name or password")
+    token = issue_session_token(user["user_id"])
+    response.set_cookie(
+        key="sakhi_token",
+        value=token["token"],
+        httponly=True,
+        samesite="lax",
+        max_age=24 * 3600
+    )
+    return {"user_id": user["user_id"], "message": f"Welcome back, {user['name']}!", "auth": token, **user}
+
+
+@app.get("/analytics/mastery/{user_id}")
+def api_topic_mastery(user_id: int):
+    """Return per-topic mastery aggregates for a student."""
+    from backend.db import get_topic_mastery
+    return {"mastery": get_topic_mastery(user_id)}
+
+
+@app.get("/gamification/xp/{user_id}")
+def api_user_xp(user_id: int):
+    """Return XP, level, and gamification data for a student."""
+    from backend.db import get_user_xp
+    xp = get_user_xp(user_id)
+    # Level thresholds
+    if xp >= 1000:
+        level, level_name, next_xp = 4, "Platinum", None
+    elif xp >= 500:
+        level, level_name, next_xp = 3, "Gold", 1000
+    elif xp >= 200:
+        level, level_name, next_xp = 2, "Silver", 500
+    else:
+        level, level_name, next_xp = 1, "Bronze", 200
+    return {
+        "xp": xp,
+        "level": level,
+        "level_name": level_name,
+        "next_level_xp": next_xp,
+        "progress_pct": round((xp / (next_xp or xp or 1)) * 100, 1) if next_xp else 100,
+    }
+
+
+@app.post("/analytics/session-end")
+def api_session_end(req: SessionEndRequest):
+    """Log a study session end with duration for time tracking."""
+    log_event(
+        "session_end",
+        user_id=req.user_id,
+        metadata={"module": req.module, "duration_seconds": req.duration_seconds},
+    )
+    return {"ok": True}
+
+
+@app.get("/analytics/study-time/{user_id}")
+def api_study_time(user_id: int):
+    """Return per-module study time for the last 7 days."""
+    import json
+    from backend.db import get_connection
+    from datetime import UTC, datetime, timedelta
+    since = (datetime.now(UTC) - timedelta(days=7)).isoformat()
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT metadata_json FROM learning_events
+        WHERE user_id = ? AND event_type = 'session_end' AND created_at >= ?
+        """,
+        (user_id, since),
+    ).fetchall()
+    conn.close()
+    totals: dict[str, int] = {}
+    for row in rows:
+        meta = json.loads(row["metadata_json"] or "{}")
+        mod = meta.get("module", "other")
+        totals[mod] = totals.get(mod, 0) + int(meta.get("duration_seconds", 0))
+    return {"study_time": [{ "module": k, "seconds": v } for k, v in totals.items()]}
+
+
+@app.get("/notifications/{user_id}")
+def api_notifications(user_id: int):
+    """Return aggregated in-app notifications for a student."""
+    from backend.db import get_connection, get_streak
+    import json
+    notifications = []
+    streak = get_streak(user_id)
+    if streak == 0:
+        notifications.append({"id": "streak", "type": "warning", "title": "Keep your streak alive!", "body": "You haven't studied today. Start a quiz or chat to maintain your streak.", "href": "/quiz"})
+    elif streak >= 7:
+        notifications.append({"id": f"streak_{streak}", "type": "success", "title": f"🔥 {streak}-day streak!", "body": "Amazing consistency! Keep it up.", "href": "/dashboard"})
+    conn = get_connection()
+    # Pending assignments
+    try:
+        rows = conn.execute(
+            """
+            SELECT a.title, a.subject, a.due_date FROM assignments a
+            LEFT JOIN assignment_submissions s ON s.assignment_id = a.id AND s.student_id = ?
+            WHERE s.id IS NULL AND a.class_ IN (SELECT class FROM users WHERE id = ?)
+            ORDER BY a.due_date ASC LIMIT 3
+            """,
+            (user_id, user_id),
+        ).fetchall()
+        for row in rows:
+            notifications.append({
+                "id": f"assign_{row['title']}",
+                "type": "info",
+                "title": f"Assignment: {row['title']}",
+                "body": f"{row['subject']} • Due: {(row['due_date'] or 'No deadline')[:10]}",
+                "href": "/dashboard"
+            })
+    except Exception:
+        pass
+    conn.close()
+    return {"notifications": notifications, "unread_count": len(notifications)}
+
+
+# ── Streaming Chat ────────────────────────────────────────────────────────────
+
+class StreamChatRequest(BaseModel):
+    session_id: str
+    message: str
+    class_: str = "8"
+    language: str = "English"
+    user_name: str = ""
+    weak_subject: str = ""
+    user_id: Optional[int] = None
+    organization_id: Optional[int] = None
+
+
+@app.post("/chat/stream")
+def api_chat_stream(req: StreamChatRequest):
+    """Stream chat response token-by-token using Server-Sent Events."""
+    from backend.chat import stream_chat
+
+    def event_generator():
+        for chunk in stream_chat(
+            session_id=req.session_id,
+            user_message=req.message,
+            class_=req.class_,
+            selected_language=req.language,
+            user_name=req.user_name,
+            weak_subject=req.weak_subject,
+            user_id=req.user_id,
+            organization_id=req.organization_id,
+        ):
+            # SSE format: data: <chunk>\n\n
+            yield f"data: {chunk}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ── Practice Paper ────────────────────────────────────────────────────────────
+
+class PracticePaperRequest(BaseModel):
+    topic: str
+    class_: str = "9"
+    subject: str = "Science"
+    language: str = "English"
+    num_questions: int = 10
+    user_id: Optional[int] = None
+
+
+@app.post("/practice-paper/generate")
+def api_generate_practice_paper(req: PracticePaperRequest):
+    """Generate a full CBSE-style practice exam paper with model answers."""
+    from backend.practice_paper import generate_practice_paper
+    result = generate_practice_paper(
+        topic=req.topic,
+        class_=req.class_,
+        subject=req.subject,
+        language=req.language,
+        num_questions=req.num_questions,
+    )
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=result.get("error", "Paper generation failed"))
+    if req.user_id:
+        log_event("practice_paper_generated", user_id=req.user_id, metadata={"topic": req.topic, "subject": req.subject})
+    return result["paper"]
 
 
 if __name__ == "__main__":
