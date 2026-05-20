@@ -14,3 +14,4 @@ httpx
 pydantic
 bcrypt
 slowapi
+PyJWT
