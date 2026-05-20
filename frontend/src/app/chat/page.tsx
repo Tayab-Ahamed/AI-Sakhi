@@ -193,6 +193,26 @@ function stripMarkdownForSpeech(text: string) {
     .trim();
 }
 
+const PREVIEW_CATALOG: RagCatalog = {
+  ready: false,
+  classes: [
+    { label: "8", count: 0 },
+    { label: "9", count: 0 },
+    { label: "10", count: 0 },
+  ],
+  subjects: [
+    { label: "Science", count: 0 },
+    { label: "Mathematics", count: 0 },
+  ],
+  chapters: [
+    { label: "Photosynthesis (Science)", count: 0 },
+    { label: "Atoms & Molecules (Science)", count: 0 },
+    { label: "Number Systems (Math)", count: 0 },
+    { label: "Quadratic Equations (Math)", count: 0 },
+  ],
+  sources: [],
+};
+
 function compactFilters(filters: RagFilters) {
   const next: Partial<RagFilters> = {};
   if (filters.class_level) next.class_level = filters.class_level;
@@ -207,7 +227,7 @@ export default function ChatPage() {
   const [chatSessionId, setChatSessionId] = useState(() => getStoredChatSessionId());
   const [messages, setMessages] = useState<Msg[]>([]);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
-  const [catalog, setCatalog] = useState<RagCatalog>({ ready: false, classes: [], subjects: [], chapters: [], sources: [] });
+  const [catalog, setCatalog] = useState<RagCatalog>(PREVIEW_CATALOG);
   const [ragFilters, setRagFilters] = useState<RagFilters>(EMPTY_FILTERS);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
@@ -254,9 +274,13 @@ export default function ChatPage() {
   async function loadCatalog() {
     try {
       const result = await api.getRagCatalog() as RagCatalog;
-      setCatalog(result);
+      if (result && result.ready) {
+        setCatalog(result);
+      } else {
+        setCatalog(PREVIEW_CATALOG);
+      }
     } catch {
-      setCatalog({ ready: false, classes: [], subjects: [], chapters: [], sources: [] });
+      setCatalog(PREVIEW_CATALOG);
     }
   }
 
@@ -731,7 +755,7 @@ export default function ChatPage() {
                 value={ragFilters.chapter}
                 onChange={(event) => setRagFilters((current) => ({ ...current, chapter: event.target.value }))}
                 style={{ fontSize: 12, height: 36 }}
-                disabled={!catalog.ready}
+                disabled={!catalog.ready && catalog.chapters.length === 0}
               >
                 <option value="">All chapters</option>
                 {filteredChapters.map((item) => (
@@ -741,6 +765,11 @@ export default function ChatPage() {
                 ))}
               </select>
             </div>
+            {!catalog.ready && (
+              <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "10px 0 0", fontStyle: "italic", lineHeight: 1.45 }}>
+                💡 Preview mode. Add NCERT PDFs to <code style={{ fontSize: 10, background: "#f1f5f9", padding: "2px 4px", borderRadius: 4, fontFamily: "monospace" }}>rag_data/ncert</code> and run <code style={{ fontSize: 10, background: "#f1f5f9", padding: "2px 4px", borderRadius: 4, fontFamily: "monospace" }}>python ingest.py</code> to enable active RAG grounding.
+              </p>
+            )}
             <button
               className="btn btn-secondary btn-sm"
               style={{ marginTop: 10, justifyContent: "center" }}

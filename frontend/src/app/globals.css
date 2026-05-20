@@ -321,6 +321,8 @@ body {
   background-repeat: no-repeat;
   background-position: right 12px center;
   padding-right: 36px;
+  padding-top: 0;
+  padding-bottom: 0;
   cursor: pointer;
 }
 
