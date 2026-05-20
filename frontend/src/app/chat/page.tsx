@@ -650,7 +650,7 @@ export default function ChatPage() {
     <div className="app-shell">
       <TourGuide />
       <Sidebar />
-      <main className="main-content">
+      <main className="main-content" style={{ flexDirection: "row" }}>
         <aside style={{ width: 300, borderRight: "1px solid var(--border-subtle)", background: "#fafaf9", padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
           <button className="btn btn-primary btn-full" onClick={startNewSession} style={{ justifyContent: "center" }}>
             <Plus size={15} /> New Chat
