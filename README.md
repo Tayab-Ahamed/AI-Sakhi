@@ -1,305 +1,292 @@
-<<<<<<< Updated upstream
-# 🌸 AI Sakhi
+# 🌸 AI Sakhi — Production-Grade Multilingual AI Learning Platform & Intelligent Tutoring System
 
-> **The Multilingual, Distraction-Free Study Companion for Indian Students.**
+> A comprehensive, full-stack educational ecosystem combining an emotionally intelligent multilingual AI tutor, custom RAG pipelines, spaced-repetition card tracking, parent/teacher dashboards, and offline-resilient PWA support.
 
-[![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat&logo=next.js)](https://nextjs.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104-009688?style=flat&logo=fastapi)](https://fastapi.tiangolo.com/)
-[![Groq](https://img.shields.io/badge/AI-Groq%20Llama%203-f97316?style=flat)](https://groq.com/)
-[![Hackathon](https://img.shields.io/badge/Status-Hackathon_Ready-22c55e?style=flat)](#)
-
-AI Sakhi is a SaaS-grade educational platform designed to provide a supportive, inclusive, and highly effective learning environment. It replaces generic AI chats with an emotionally intelligent, curriculum-aligned tutor that supports voice input, PDF analysis, gamified quizzes, and distraction-free study timers.
-
----
-
-## ✨ Key Features
-
-*   **🎙️ Voice & Multilingual Chat:** Speak your doubts naturally! AI Sakhi understands and explains complex topics in English, Hinglish, Hindi, Kannada, and Tamil. Includes a multi-level "Explain Simpler" feature.
-*   **📄 PDF Memory Destruct Mode:** Upload PDFs, images, or notes. Sakhi instantly summarizes the document and generates practice questions based *only* on the provided material.
-*   **🎯 Adaptive Quizzes:** Generate 5-question quizzes on any topic with Easy, Medium, or Hard difficulties. Get immediate feedback, earn XP, and celebrate perfect scores with confetti animations!
-*   **⏱️ Focus Timer & Study Plans:** Automatically generate bite-sized study plans and transition seamlessly into a built-in Pomodoro focus timer with browser notifications.
-*   **🏆 Gamification & Analytics:** Keep students engaged with dynamic achievement badges, animated daily streaks, and an interactive heatmap. Compete locally on the School Leaderboard!
-*   **📊 Parent/Teacher Insights:** Advanced dashboard allowing educators to export PDF/PNG report cards and identify "Weak Topics" across the student base.
-
-## 🛠️ Tech Stack
-
-**Frontend:**
-*   Next.js 16 (App Router)
-*   React 18 + TypeScript
-*   Tailwind CSS + Framer Motion (Animations)
-*   Lucide React (Icons)
-*   Web Speech API (Native Voice Recognition)
-
-**Backend:**
-*   Python 3.10+ & FastAPI
-*   Groq API (Llama 3 70B for ultra-fast, intelligent responses)
-*   LLaVa Vision Model (For image/diagram analysis)
-*   SQLite (Local persistence)
-
-## 🚀 Getting Started
-
-### Prerequisites
-*   Node.js 18+
-*   Python 3.10+
-*   A [Groq API Key](https://console.groq.com/)
-
-### 1. Backend Setup
-=======
-# AI Sakhi — Multilingual AI Learning Platform
-
-> Patient explanations. Everyday progress. A personalised AI education companion for every student.
-
-AI Sakhi is a full-stack, production-grade educational platform that combines a multilingual AI tutor, adaptive quizzes, spaced-repetition flashcards, teacher tools, and offline-capable PWA support — all in a single, cohesive application built for the diverse needs of learners across India.
+[![Next.js](https://img.shields.io/badge/Next.js-15-black?style=flat-square&logo=next.js)](https://nextjs.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com/)
+[![SQLite](https://img.shields.io/badge/SQLite-3-003B57?style=flat-square&logo=sqlite)](https://sqlite.org/)
+[![ChromaDB](https://img.shields.io/badge/VectorDB-Chroma-fca5a5?style=flat-square)](https://github.com/chroma-core/chroma)
+[![Groq LLaMA](https://img.shields.io/badge/Groq-LLaMA%203.3%20(70B)-8b5cf6?style=flat-square)](https://groq.com/)
+[![CI/CD](https://img.shields.io/github/actions/workflow/status/Tayab-Ahamed/AI-Sakhi/main.yml?branch=main&style=flat-square&label=build)](https://github.com/Tayab-Ahamed/AI-Sakhi/actions)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](#)
 
 ---
 
-## ✨ Features
+## 🎯 Project Overview
 
-### 🤖 AI Tutor (Chat)
-- Conversational learning powered by **Groq LLaMA 3** — fast, accurate, NCERT-aligned
-- Supports **English, Hinglish, Hindi, Kannada, Tamil** with seamless language switching
-- Simplify, translate, and explain-differently flows
-- Optional **RAG mode**: grounded answers from uploaded NCERT PDFs via ChromaDB
+**AI Sakhi** is a production-grade, state-of-the-art educational platform designed to bridge the accessibility and engagement gap for students across India. Unlike simple chat wrappers, AI Sakhi implements full-stack pedagogical logic—including **SuperMemo SM-2 Spaced Repetition**, **Adaptive Learning Thresholds**, local RAG semantic search, and structured offline workflows—to deliver a personalized, distraction-free educational companion.
 
-### 📝 Adaptive Quiz Engine
-- 5-question MCQs with hints, explanations, and per-question feedback
-- **SM-2 adaptive difficulty**: auto-recommends Easy / Medium / Hard based on rolling quiz history
-- Offline quiz caching — students can attempt cached quizzes without internet
-- Confetti & encouragement on perfect scores
-
-### 🃏 Spaced Repetition Flashcards
-- Full **SuperMemo SM-2 algorithm**: dynamic intervals based on student self-rating (Forgot / Hard / Okay / Easy)
-- Due-today queue surfaces cards at optimal review intervals
-- Per-card easiness factor tracking
-
-### 📊 Student Dashboard
-- Streak counter, XP, total quizzes, avg score
-- Weak-topic identification and curriculum-aligned recommendations
-- Pending assignments banner (from teacher-set tasks)
-
-### 📚 AI Study Notes
-- One-click generation of structured markdown notes for any curriculum topic
-- Covers: key concepts, explanation, facts/formulas, examples, review questions
-- Save locally and download as `.md`
-
-### 📄 PDF Progress Reports
-- Client-side PDF generation using **jsPDF** — no server required
-- Includes stats, color-coded quiz history table, completed assignments
-- Shareable with parents or teachers
-
-### 🏆 Leaderboard & Gamification
-- Organisation-level leaderboard ranked by XP
-- Daily streaks, achievement badges, XP on quiz completion
-
-### ⏱️ Focus Timer
-- Pomodoro-style 25/5/15 minute timer tied to study sessions
-- Session history tracking
-
-### 🎓 Teacher Tools
-- Create curriculum-aligned assignments with due dates and instructions
-- Real-time submission tracking with per-student score breakdown
-- Student progress report export
-
-### 👨‍👩‍👧 Parent Dashboard
-- Monitor child's streak, avg score, quiz history, and completed assignments
-- Low-score alert when student needs more support
-
-### 🛡️ Admin Console
-- Organisation-wide user management
-- Inline role changing (student / teacher / parent / admin)
-- User count breakdown by role
-
-### ♿ Accessibility Suite
-- **Dyslexia Mode**: OpenDyslexic font, cream background, wide letter/word spacing
-- **Reduce Motion**: disables all CSS transitions and animations
-- **Font Scaling**: Small / Medium / Large base size toggle
-
-### 📲 Offline Mode & PWA
-- Installable as a native app on Android / iOS / Desktop
-- Service Worker with Cache-First static assets and Network-First API caching
-- IndexedDB queue for progress writes when offline — synced automatically on reconnect
-- Branded offline fallback page
+The platform is designed to cater to multiple core personas:
+*   **Students**: Access a gamified, multilingual study experience with voice inputs, adaptive quiz flows, and customizable interfaces.
+*   **Teachers**: Assign targeted, curriculum-aligned tasks and monitor classroom submission scores in real-time.
+*   **Parents**: Monitor streaks, track performance heatmaps, and receive automated "needs attention" alert summaries.
+*   **Administrators**: Seamlessly manage organization-wide user privileges and roles directly inside an integrated console.
 
 ---
 
-## 🛠 Tech Stack
+## 🚀 Key Engineering & Technical Highlights
 
-| Layer | Technology |
-|---|---|
-| **Frontend** | Next.js 14 (App Router), React, Framer Motion, Tailwind-free Vanilla CSS |
-| **Backend** | FastAPI, Python 3.11, SQLite, Uvicorn |
-| **AI / LLM** | Groq API (LLaMA 3.3 70B) |
-| **RAG** | ChromaDB, `sentence-transformers`, `pypdf` |
-| **PDF** | jsPDF (client-side) |
-| **Tests** | pytest (SM-2, adaptive difficulty, recommendation engine) |
-| **DevOps** | Docker, Docker Compose |
+### 1. Intelligent Conversational Agent & Local RAG Pipeline
+*   **High-Speed LLM Inference**: Integrated with Groq-accelerated **LLaMA 3.3 (70B)** and LLaVa for ultra-low-latency multilingual responses, contextual explanations, and image/diagram analyses.
+*   **NCERT Curriculum Grounding**: Custom retrieval-augmented generation (RAG) backend utilizing a local **ChromaDB** vector database. Textbooks are parsed, preprocessed, dynamically chunked, and embedded via `sentence-transformers` (`all-MiniLM-L6-v2`) to provide source-cited answers referencing precise page numbers.
 
----
+### 2. Algorithmic Spaced Repetition (SuperMemo SM-2)
+*   **Pedagogical Review Scheduler**: Employs a mathematical implementation of the **SM-2 algorithm** that tracks student self-assessments (Forgot, Hard, Okay, Easy).
+*   **Smart Queuing**: Dynamically computes next-review dates, tracking rolling repetitions and individual card *easiness factors* (EF) clamped at a minimum of `1.3` to ensure optimal memory retention.
 
-## 🚀 Quick Start (Local Development)
+### 3. Adaptive Learning & Dynamic Quizzing
+*   **Automated Difficulty Calibration**: Analyzes the student's rolling quiz history to auto-adjust MCQ difficulties between Easy, Medium, and Hard, aligning quizzes dynamically to the student's current learning curve.
+*   **Weak-Topic Recommendations**: Aggregates performance data per curriculum category to recommend hyper-specific review topics and dynamically generate tailored AI study guides.
 
-### Prerequisites
-- Python 3.11+
-- Node.js 20+
-- A free [Groq API key](https://console.groq.com)
+### 4. Resilient Offline PWA Capability
+*   **Offline-First Quizzing**: Custom Service Workers feature cache-first static asset delivery alongside network-first API request fallbacks, allowing students to access cached quizzes without active internet connection.
+*   **Dynamic Write Syncing**: Integrated IndexedDB buffer queue captures quiz records and student progress while offline, automatically scheduling a sync-back to the primary FastAPI server the moment connectivity resumes.
 
-### 1. Clone the repository
-```bash
-git clone https://github.com/Tayab-Ahamed/AI-Sakhi.git
-cd AI-Sakhi
-```
+### 5. Hardened Security & Enterprise Features
+*   **Secure Cookie Authentication**: Transitioned from bearer tokens in localStorage to **HttpOnly, SameSite, Secure Cookie-based JWT exchange** to fully eliminate cross-site scripting (XSS) risks.
+*   **Granular CORS Rules**: Transitioned backend CORS configurations to an explicit domain whitelist with `allow_credentials=True` support.
+*   **React Error Boundaries**: Custom-styled UI Error Boundary handles runtime script exceptions gracefully, providing inline diagnostics and immediate state-recovery hooks to prevent total client crashes.
 
-### 2. Configure environment
-```bash
-cp .env.example .env
-# Edit .env and add your GROQ_API_KEY
-```
-
-### 3. Backend
->>>>>>> Stashed changes
-```bash
-cd backend
-python -m venv venv
-<<<<<<< Updated upstream
-source venv/bin/activate  # Or `venv\Scripts\activate` on Windows
-pip install -r requirements.txt
-
-# Create a .env file and add your API key:
-# GROQ_API_KEY=your_groq_api_key_here
-
-uvicorn main:app --reload
-```
-
-### 2. Frontend Setup
-```bash
-cd frontend-next
-=======
-venv\Scripts\activate          # Windows
-# source venv/bin/activate     # macOS / Linux
-
-pip install -r requirements.txt
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-### 4. Frontend
-```bash
-cd frontend
->>>>>>> Stashed changes
-npm install
-npm run dev
-```
-
-<<<<<<< Updated upstream
-Navigate to `http://localhost:3000` to start learning! 
-
-## 🎨 Demo & Repository
-
-**Repository:** [GitHub - Tayab-Ahamed/AI-Sakhi](https://github.com/Tayab-Ahamed/AI-Sakhi.git)
-*(Include links to your YouTube prototype video or screenshots here)*
-
-## 🤝 Built For
-Designed with ❤️ for students, aiming to make quality education accessible, engaging, and less intimidating.
-=======
-Open [http://localhost:3000](http://localhost:3000).
+### 6. Dyslexia-Inclusive & Accessible Design
+*   **Dyslexia Workspace Mode**: Seamless toggle implementing the open-source **OpenDyslexic typeface**, a soft cream color scheme, and enhanced word-spacing to support neurodivergent learners.
+*   **Reduce Motion configurations**: Comprehensive switch which disables CSS transitions/animations across all dashboards to ensure high comfort and standard accessibility compliance.
 
 ---
 
-## 🐳 Docker Deployment
+## 🏗️ System Architecture
+
+```mermaid
+graph TD
+    classDef client fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff;
+    classDef server fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff;
+    classDef database fill:#1e293b,stroke:#f59e0b,stroke-width:2px,color:#fff;
+    classDef ai fill:#1e293b,stroke:#8b5cf6,stroke-width:2px,color:#fff;
+
+    subgraph Client [Client Portal - Next.js PWA]
+        UI[UI / React App]:::client
+        SW[Service Worker / Cache]:::client
+        IDB[IndexedDB Queue]:::client
+    end
+
+    subgraph Backend [Backend API - FastAPI]
+        API[API Router & Auth]:::server
+        REC[Recommendation Engine]:::server
+        SM2[SM-2 Spaced Repetition]:::server
+        AQ[Adaptive Quiz Engine]:::server
+    end
+
+    subgraph Storage [Data Layer]
+        SQLite[(SQLite DB)]:::database
+        Chroma[(ChromaDB RAG)]:::database
+    end
+
+    subgraph AI_Services [Cognitive Layer]
+        Groq[Groq LLaMA 3.3]:::ai
+        Emb[Sentence-Transformers]:::ai
+    end
+
+    UI --> SW
+    SW -->|Offline Sync| IDB
+    UI -->|HttpOnly Cookie / API| API
+    API --> REC
+    API --> SM2
+    API --> AQ
+    API --> SQLite
+    API --> Chroma
+    Chroma -->|Embeddings| Emb
+    API -->|Prompt Completion| Groq
+```
+
+---
+
+## 🛠️ Technology Stack
+
+| Layer | Technologies | Key Role / Highlight |
+| :--- | :--- | :--- |
+| **Frontend UI** | **Next.js 15 (App Router)**, React 18, Framer Motion | Modern, server-rendered components, rich animations, and high SEO performance. |
+| **Styling** | **Vanilla CSS** | Pure custom layouts, fast loading times, free of bulky external CSS frameworks. |
+| **PWA Services** | **Service Workers**, **IndexedDB**, Workbox | Enabling offline caching, local data queuing, and native app installations. |
+| **Backend API** | **FastAPI**, Python 3.11, Uvicorn | High-performance asynchronous API endpoints, fast request routing. |
+| **Database** | **SQLite**, SQLModel / SQLAlchemy | Solid local persistence, rapid transaction capabilities. |
+| **Vector Engine**| **ChromaDB**, `sentence-transformers` | Core semantic search vector space for NCERT curriculum RAG indexing. |
+| **Inference API**| **Groq API** (LLaMA 3.3 70B, LLaVa) | Low-latency response streams, image explanations, multilingual tutoring. |
+| **Tests & CI**   | **pytest**, **Vitest**, GitHub Actions | Comprehensive automated testing coverage, strict compile validations. |
+
+---
+
+## 📂 Repository Structure
+
+```text
+AI-Sakhi/
+├── .github/
+│   └── workflows/
+│       └── main.yml            # CI/CD pipeline (pytest & vitest build checks)
+├── backend/
+│   ├── main.py                 # FastAPI application root & API router configuration
+│   ├── config.py               # Global environment settings & variables
+│   ├── db.py                   # SQLite schemas, connection sessions, and models
+│   ├── auth.py                 # Secure HttpOnly cookie handling & JWT utilities
+│   ├── chat.py                 # Groq LLaMA integration & advanced prompting engines
+│   ├── adaptive.py             # Performance-tracking adaptive difficulty engine
+│   ├── spaced_repetition.py    # SM-2 algorithm scheduler core logic
+│   ├── recommendations.py      # Weak-topic analyzer & curriculum recommender
+│   ├── teacher_tools.py        # Classroom assignment workflows & grade metrics
+│   ├── study_notes.py          # AI structured markdown notes generator
+│   └── tests/                  # Backend unit & integration test suites
+├── frontend/
+│   ├── src/
+│   │   ├── app/                # Next.js App Router workspace
+│   │   │   ├── chat/           # Voice-enabled conversational AI workspace
+│   │   │   ├── quiz/           # Dynamic MCQ quizzes
+│   │   │   ├── flashcards/     # Spaced-repetition card dashboards
+│   │   │   ├── dashboard/      # Interactive student analytics dashboard
+│   │   │   ├── study-notes/    # Custom study guide generator
+│   │   │   ├── teacher/        # Assignments and classroom insights
+│   │   │   ├── parent/         # Home streaks & low-score alert portals
+│   │   │   └── admin/          # Granular role & access dashboard
+│   │   ├── components/         # Premium reusable UI cards, boundaries, and panels
+│   │   ├── lib/                # API Client fetch, global logging tools, React Contexts
+│   │   └── test/               # React test framework configurations
+│   ├── package.json            # Frontend modules & scripts
+│   ├── tsconfig.json           # Strict TypeScript configuration
+│   └── vitest.config.ts        # Unit test suite runner settings
+├── curriculum/                 # Structured CBSE/NCERT curriculum templates
+├── docker-compose.yml          # Multi-container production compose recipe
+├── Dockerfile.backend          # Minimalist Python FastAPI build definition
+├── Dockerfile.frontend         # Standalone Next.js Node production runner
+└── requirements.txt            # Python environment dependencies
+```
+
+---
+
+## 🚀 Setting Up the Project Locally
+
+Follow these instructions to run the complete, connected workspace locally.
+
+### 📋 Prerequisites
+*   **Python 3.11+**
+*   **Node.js 20+**
+*   A free [Groq API Key](https://console.groq.com)
+
+---
+
+### Step 1: Clone & Configure
+
+1. Clone the repository and navigate to the directory:
+   ```bash
+   git clone https://github.com/Tayab-Ahamed/AI-Sakhi.git
+   cd AI-Sakhi
+   ```
+
+2. Generate the backend configuration file:
+   ```bash
+   cp .env.example .env
+   ```
+   *Open `.env` and assign your `GROQ_API_KEY` (e.g., `GROQ_API_KEY=gsk_...`).*
+
+---
+
+### Step 2: Spin Up the Backend Server
+
+1. Create a virtual python environment:
+   ```bash
+   cd backend
+   python -m venv venv
+   ```
+
+2. Activate the virtual environment:
+   *   **Windows**:
+       ```powershell
+       venv\Scripts\activate
+       ```
+   *   **macOS / Linux**:
+       ```bash
+       source venv/bin/activate
+       ```
+
+3. Install required packages and run the application:
+   ```bash
+   pip install -r requirements.txt
+   python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+   ```
+   *The FastAPI server will start on [http://127.0.0.1:8000](http://127.0.0.1:8000). The swagger docs are reviewable at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).*
+
+---
+
+### Step 3: Run the Next.js Frontend
+
+1. Navigate to the frontend directory:
+   ```bash
+   cd ../frontend
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Start the local server in development mode:
+   ```bash
+   npm run dev
+   ```
+   *The frontend dashboard will run at [http://localhost:3000](http://localhost:3000).*
+
+---
+
+## 🐳 Running with Docker
+
+AI Sakhi is configured for containerized orchestration. To build and run both the API backend and PWA frontend simultaneously:
 
 ```bash
-cp .env.example .env   # fill in GROQ_API_KEY
 docker compose up --build
 ```
 
-- Backend available at `http://localhost:8000`
-- Frontend available at `http://localhost:3000`
-
-SQLite data is persisted to the `./data/` volume.
-
----
-
-## 🗂 Project Structure
-
-```
-AI-Sakhi/
-├── backend/
-│   ├── main.py                 # FastAPI app + all endpoints
-│   ├── db.py                   # SQLite schema & helpers
-│   ├── chat.py                 # Groq LLM integration
-│   ├── adaptive.py             # Adaptive difficulty engine
-│   ├── spaced_repetition.py    # SM-2 algorithm (pure logic)
-│   ├── recommendations.py      # Curriculum recommendation engine
-│   ├── teacher_tools.py        # Assignment & submission logic
-│   ├── study_notes.py          # AI study notes generator
-│   └── tests/                  # pytest unit tests
-├── frontend/
-│   └── src/
-│       ├── app/                # Next.js App Router pages
-│       │   ├── chat/           # AI Tutor chat
-│       │   ├── quiz/           # Adaptive quiz
-│       │   ├── flashcards/     # Spaced repetition
-│       │   ├── dashboard/      # Student dashboard
-│       │   ├── study-notes/    # AI note generation
-│       │   ├── export/         # PDF report export
-│       │   ├── teacher/        # Teacher tools
-│       │   ├── parent/         # Parent dashboard
-│       │   └── admin/          # Admin console
-│       ├── components/         # Reusable UI components
-│       └── lib/                # API client, hooks, contexts
-├── curriculum/                 # NCERT curriculum JSON
-├── docker-compose.yml
-├── Dockerfile.backend
-├── Dockerfile.frontend
-└── .env.example
-```
+*   **PWA Interface**: [http://localhost:3000](http://localhost:3000)
+*   **API Service**: [http://localhost:8000](http://localhost:8000)
+*   **Persisted Storage**: SQLite databases are continuously written and persisted within local `./data/` directories.
 
 ---
 
-## 🧪 Running Tests
+## 🧪 Comprehensive Verification & Testing
 
+The platform maintains complete automated test suites across both the React components and Python logic layers.
+
+### 🐍 Backend Tests (Pytest)
+Executes logic checks covering our mathematical SM-2 models, adaptive difficulties, and topic weight rankings:
 ```bash
-python -m pytest backend/tests/ -v
+# From the root directory:
+.\venv\Scripts\pytest backend/tests/ -v
 ```
+*Expected output: All 21 tests passed (SM-2 queues, difficulty boundaries, ranking logic).*
 
-21 tests covering:
-- SM-2 spaced repetition algorithm (10 tests)
-- Adaptive difficulty thresholds (5 tests)
-- Recommendation engine ranking logic (4 tests)
-- Helper utilities (2 tests)
-
----
-
-## 🔧 Environment Variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `GROQ_API_KEY` | ✅ | Groq API key — get one free at [console.groq.com](https://console.groq.com) |
-| `DB_PATH` | Optional | Path to SQLite DB (default: `./backend/sakhi.db`) |
-| `GROQ_MODEL` | Optional | Model name (default: `llama3-8b-8192`) |
-| `NEXT_PUBLIC_API_URL` | Optional | Backend URL for Docker deploys (default: `http://localhost:8000`) |
+### ⚛️ Frontend Tests (Vitest)
+Validates components, navigation controls, user roles, and accessible mode operations:
+```bash
+# From the frontend directory:
+npm run test
+```
+*Expected output: All test cases fully passed.*
 
 ---
 
-## 📖 Optional: NCERT RAG Index
+## 📖 RAG Pipeline Ingestion
 
-For grounded, textbook-cited answers:
+To ground the AI tutor with specific textbook knowledge:
 
-1. Place NCERT PDFs in `rag_data/ncert/`
-2. Run the ingestion pipeline:
+1. Place your target textbook PDFs inside: `rag_data/ncert/`
+2. Run the ingestion pipeline to parse, chunk, embed, and index files into ChromaDB:
    ```bash
    python ingest.py
    ```
-3. The frontend sidebar will show "RAG active" and all chat responses will cite source pages.
+3. Once completed, the AI Tutor sidebar will show an **"Active RAG Mode"** indicator, and chat replies will cite exact sources.
 
 ---
 
 ## 📄 License
-
-MIT License. See [LICENSE](LICENSE) for details.
+Distributed under the MIT License. See `LICENSE` for details.
 
 ---
 
 <div align="center">
-  <p>Built with ❤️ for students across India</p>
+  <p>Engineered with ❤️ for students, parents, and educators.</p>
 </div>
->>>>>>> Stashed changes
