@@ -704,7 +704,7 @@ export default function ChatPage() {
                 setSelectedVoiceUri(event.target.value);
                 localStorage.setItem(VOICE_STORAGE_KEY, event.target.value);
               }}
-              style={{ fontSize: 12, height: 36 }}
+              style={{ paddingTop: 0, paddingBottom: 0, fontSize: 12, height: 36 }}
             >
               <option value="">Browser default voice</option>
               {visibleVoices.map((voice) => (
@@ -728,7 +728,7 @@ export default function ChatPage() {
                 className="input input-select"
                 value={ragFilters.class_level}
                 onChange={(event) => setRagFilters((current) => ({ ...current, class_level: event.target.value }))}
-                style={{ fontSize: 12, height: 36 }}
+                style={{ paddingTop: 0, paddingBottom: 0, fontSize: 12, height: 36 }}
               >
                 <option value="">All classes</option>
                 {catalog.classes.map((item) => (
@@ -741,7 +741,7 @@ export default function ChatPage() {
                 className="input input-select"
                 value={ragFilters.subject}
                 onChange={(event) => setRagFilters((current) => ({ ...current, subject: event.target.value, chapter: "" }))}
-                style={{ fontSize: 12, height: 36 }}
+                style={{ paddingTop: 0, paddingBottom: 0, fontSize: 12, height: 36 }}
               >
                 <option value="">All subjects</option>
                 {catalog.subjects.map((item) => (
@@ -754,7 +754,7 @@ export default function ChatPage() {
                 className="input input-select"
                 value={ragFilters.chapter}
                 onChange={(event) => setRagFilters((current) => ({ ...current, chapter: event.target.value }))}
-                style={{ fontSize: 12, height: 36 }}
+                style={{ paddingTop: 0, paddingBottom: 0, fontSize: 12, height: 36 }}
                 disabled={!catalog.ready && catalog.chapters.length === 0}
               >
                 <option value="">All chapters</option>
@@ -853,7 +853,7 @@ export default function ChatPage() {
           </div>
         </aside>
 
-        <section style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+        <section style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
           <div style={{ flex: 1, overflowY: "auto", padding: "24px 32px" }}>
             <AnimatePresence>
               {showEmpty && messages.length === 0 && !typing && !loadingHistory ? (

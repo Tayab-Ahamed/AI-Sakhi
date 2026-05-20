@@ -139,7 +139,7 @@ export default function Sidebar() {
             className="input input-select"
             value={user?.language || "English"}
             onChange={handleLangChange}
-            style={{ paddingLeft: 30, fontSize: 13, height: 36, borderRadius: "var(--radius-md)" }}
+            style={{ paddingLeft: 30, paddingTop: 0, paddingBottom: 0, fontSize: 13, height: 36, borderRadius: "var(--radius-md)" }}
           >
             {LANGUAGES.map((l) => <option key={l} value={l}>{l}</option>)}
           </select>
@@ -152,7 +152,7 @@ export default function Sidebar() {
           className="input input-select"
           value={user?.role || "student"}
           onChange={handleRoleChange}
-          style={{ fontSize: 13, height: 36, borderRadius: "var(--radius-md)" }}
+          style={{ paddingTop: 0, paddingBottom: 0, fontSize: 13, height: 36, borderRadius: "var(--radius-md)" }}
         >
           {ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
         </select>
