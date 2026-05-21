@@ -727,5 +727,280 @@ def api_generate_practice_paper(req: PracticePaperRequest):
     return result["paper"]
 
 
+# ── Teacher & Assignment Tools ───────────────────────────────────────────────
+
+class AssignmentCreateRequest(BaseModel):
+    teacher_id: int
+    organization_id: int
+    title: str
+    subject: str
+    topic: str
+    difficulty: str = "medium"
+    class_: str = "8"
+    instructions: str = ""
+    due_date: Optional[str] = None
+
+class AssignmentSubmitRequest(BaseModel):
+    student_id: int
+    score: int
+    total_questions: int
+
+@app.post("/assignments")
+def api_create_assignment(req: AssignmentCreateRequest):
+    from backend.teacher_tools import create_assignment
+    try:
+        return create_assignment(
+            teacher_id=req.teacher_id,
+            organization_id=req.organization_id,
+            title=req.title,
+            subject=req.subject,
+            topic=req.topic,
+            difficulty=req.difficulty,
+            class_=req.class_,
+            instructions=req.instructions,
+            due_date=req.due_date,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/assignments")
+def api_list_assignments(
+    organization_id: Optional[int] = None,
+    teacher_id: Optional[int] = None,
+    class_: Optional[str] = None,
+):
+    from backend.teacher_tools import list_assignments
+    try:
+        return list_assignments(
+            organization_id=organization_id,
+            teacher_id=teacher_id,
+            class_=class_,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/assignments/{id}")
+def api_get_assignment(id: int):
+    from backend.teacher_tools import get_assignment
+    item = get_assignment(id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    return item
+
+@app.delete("/assignments/{id}")
+def api_delete_assignment(id: int, teacher_id: int):
+    from backend.teacher_tools import delete_assignment
+    success = delete_assignment(id, teacher_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Assignment not found or unauthorized")
+    return {"ok": True}
+
+@app.post("/assignments/{assignment_id}/submit")
+def api_submit_assignment(assignment_id: int, req: AssignmentSubmitRequest):
+    from backend.teacher_tools import submit_assignment
+    try:
+        return submit_assignment(
+            assignment_id=assignment_id,
+            student_id=req.student_id,
+            score=req.score,
+            total_questions=req.total_questions,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/assignments/student/{userId}")
+def api_get_student_assignments(userId: int, organization_id: Optional[int] = None):
+    from backend.teacher_tools import get_student_assignments
+    try:
+        return get_student_assignments(userId, organization_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/assignments/{assignment_id}/submissions")
+def api_get_assignment_submissions(assignment_id: int):
+    from backend.teacher_tools import get_assignment_submissions
+    try:
+        return {"submissions": get_assignment_submissions(assignment_id)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/report/student/{userId}")
+def api_generate_student_report_data(userId: int):
+    from backend.teacher_tools import generate_student_report_data
+    try:
+        return generate_student_report_data(userId)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class FeedbackUpdateRequest(BaseModel):
+    feedback_note: str
+
+
+@app.get("/analytics/class/{org_id}")
+def api_class_analytics(org_id: int):
+    from backend.teacher_tools import get_class_analytics
+    try:
+        return get_class_analytics(org_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/organization/roster/{org_id}")
+def api_organization_roster(org_id: int):
+    from backend.teacher_tools import get_organization_roster
+    try:
+        return {"roster": get_organization_roster(org_id)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class FeedbackUpdateRequest(BaseModel):
+    feedback_note: str
+
+
+@app.put("/assignments/submissions/{submission_id}/feedback")
+def api_update_submission_feedback(submission_id: int, req: FeedbackUpdateRequest):
+    from backend.teacher_tools import update_submission_feedback
+    try:
+        res = update_submission_feedback(submission_id, req.feedback_note)
+        if not res:
+            raise HTTPException(status_code=404, detail="Submission not found")
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class DemoSeedRequest(BaseModel):
+    role: str
+    name: str
+    class_: str
+    language: str
+    weak_subject: str
+    organization_id: int
+
+
+@app.post("/demo/seed")
+def api_seed_demo_data(req: DemoSeedRequest):
+    import sqlite3
+    import random
+    from datetime import datetime, timedelta, UTC
+    from backend.config import DB_PATH
+    from backend.db import create_user, set_user_password
+    from backend.auth import hash_password
+    try:
+        user_id = create_user(
+            name=req.name.strip(),
+            class_=req.class_.strip(),
+            language=req.language.strip(),
+            weak_subject=req.weak_subject.strip(),
+            role=req.role.strip(),
+            organization_id=req.organization_id
+        )
+        set_user_password(user_id, hash_password("password123"))
+        
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        now = datetime.now(UTC)
+        
+        if req.role == "student":
+            topics = [req.weak_subject, "Mathematics", "Science", "English", "History"]
+            for topic in topics:
+                if not topic: continue
+                num_attempts = random.randint(2, 5)
+                for i in range(num_attempts):
+                    days_ago = random.randint(1, 10)
+                    timestamp = (now - timedelta(days=days_ago, hours=random.randint(1, 12))).isoformat()
+                    score = random.randint(4, 9)
+                    total = 10
+                    if topic == req.weak_subject:
+                        score = random.randint(2, 6)
+                    cur.execute(
+                        """
+                        INSERT INTO progress (user_id, topic, score, total, streak, timestamp)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (user_id, topic, score, total, random.randint(1, 7), timestamp)
+                    )
+            
+            event_types = ["progress_updated", "study_notes_generated", "flashcards_generated", "chat_message"]
+            for i in range(15):
+                days_ago = random.randint(1, 7)
+                timestamp = (now - timedelta(days=days_ago, hours=random.randint(1, 23))).isoformat()
+                cur.execute(
+                    """
+                    INSERT INTO learning_events (user_id, organization_id, event_type, metadata_json, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (user_id, req.organization_id, random.choice(event_types), "{}", timestamp)
+                )
+                
+            modules = ["chat", "quiz", "flashcards", "study_notes", "study_plan"]
+            for m in modules:
+                for d in range(1, 6):
+                    if random.random() > 0.3:
+                        duration = random.randint(300, 2400)
+                        timestamp = (now - timedelta(days=d, hours=random.randint(1, 12))).isoformat()
+                        cur.execute(
+                            """
+                            INSERT INTO learning_events (user_id, organization_id, event_type, metadata_json, created_at)
+                            VALUES (?, ?, 'session_end', ?, ?)
+                            """,
+                            (user_id, req.organization_id, f'{{"module": "{m}", "duration_seconds": {duration}}}', timestamp)
+                        )
+                        
+        elif req.role == "teacher":
+            topics = ["Algebra Essentials", "Chemical Reactions", "Indian Constitution", "Grammar Tenses"]
+            for t in topics:
+                due = (now + timedelta(days=random.randint(2, 7))).isoformat()
+                cur.execute(
+                    """
+                    INSERT INTO assignments (teacher_id, organization_id, title, subject, topic, difficulty, class_, instructions, due_date, created_at, updated_at, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                    """,
+                    (user_id, req.organization_id, f"Mock Assignment: {t}", "General", t, "medium", req.class_, "Complete the quiz on Sakhi and analyze results.", due, now.isoformat(), now.isoformat())
+                )
+                
+        conn.commit()
+        conn.close()
+        return {"ok": True, "message": f"Successfully created and seeded test {req.role} account!", "user_id": user_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/analytics/daily-activity/{org_id}")
+def api_daily_activity(org_id: int):
+    import sqlite3
+    from datetime import datetime, timedelta, UTC
+    from backend.config import DB_PATH
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        
+        now = datetime.now(UTC)
+        dates = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
+        
+        activity = []
+        for d in dates:
+            start = f"{d}T00:00:00"
+            end = f"{d}T23:59:59"
+            row = cur.execute(
+                """
+                SELECT COUNT(*) as count 
+                FROM learning_events 
+                WHERE organization_id = ? AND created_at >= ? AND created_at <= ?
+                """,
+                (org_id, start, end),
+            ).fetchone()
+            count = row["count"] if row else 0
+            activity.append({"date": d, "count": count})
+            
+        conn.close()
+        return {"activity": activity}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)

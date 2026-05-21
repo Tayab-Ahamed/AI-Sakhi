@@ -107,7 +107,7 @@ type ChatParams = {
 
 export const api = {
   // ── Auth ──────────────────────────────────────────────────────────────────
-  createUser: (data: { name: string; class_: string; language: string; weak_subject: string; role?: string; organization_id?: number }) =>
+  createUser: (data: { name: string; class_: string; language: string; weak_subject: string; role?: string; organization_id?: number; password?: string }) =>
     apiFetch("/user/create", { method: "POST", body: JSON.stringify(data) }),
 
   getUser: (userId: number) => apiFetch(`/user/${userId}`),
@@ -212,7 +212,8 @@ export const api = {
     apiFetch(`/dashboard${organizationId ? `?organization_id=${organizationId}` : ""}`),
 
   // ── Demo ───────────────────────────────────────────────────────────────────
-  seedDemoData: () => apiFetch("/demo/seed", { method: "POST", body: JSON.stringify({}) }),
+  seedDemoData: (data: { role: string; name: string; class_: string; language: string; weak_subject: string; organization_id: number }) => 
+    apiFetch("/demo/seed", { method: "POST", body: JSON.stringify(data) }),
 
   // ── Adaptive / Recommendations ────────────────────────────────────────────
   getRecommendedDifficulty: (userId: number, topic?: string) =>
@@ -262,9 +263,19 @@ export const api = {
   logSessionEnd: (data: { user_id: number; module: string; duration_seconds: number }) =>
     apiFetch("/analytics/session-end", { method: "POST", body: JSON.stringify(data) }),
   getStudyTime: (userId: number) => apiFetch(`/analytics/study-time/${userId}`),
+  getDailyActivity: (orgId: number) => apiFetch(`/analytics/daily-activity/${orgId}`),
 
   // ── Notifications ─────────────────────────────────────────────────────────
   getNotifications: (userId: number) => apiFetch(`/notifications/${userId}`),
+
+  // ── Teacher Analytics, Roster & Feedback ──────────────────────────────────
+  getClassAnalytics: (orgId: number) => apiFetch(`/analytics/class/${orgId}`),
+  getOrganizationRoster: (orgId: number) => apiFetch(`/organization/roster/${orgId}`),
+  updateSubmissionFeedback: (submissionId: number, feedbackNote: string) =>
+    apiFetch(`/assignments/submissions/${submissionId}/feedback`, {
+      method: "PUT",
+      body: JSON.stringify({ feedback_note: feedbackNote }),
+    }),
 };
 
 // ── Streaming Chat via SSE ────────────────────────────────────────────────────

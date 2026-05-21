@@ -105,6 +105,38 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (organization_id) REFERENCES organizations(id)
         );
+
+        CREATE TABLE IF NOT EXISTS assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            teacher_id INTEGER,
+            organization_id INTEGER,
+            title TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            difficulty TEXT DEFAULT 'medium',
+            class_ TEXT DEFAULT '8',
+            instructions TEXT,
+            due_date TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            FOREIGN KEY (teacher_id) REFERENCES users(id),
+            FOREIGN KEY (organization_id) REFERENCES organizations(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS assignment_submissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            assignment_id INTEGER,
+            student_id INTEGER,
+            score INTEGER,
+            total_questions INTEGER,
+            completed INTEGER DEFAULT 0,
+            submitted_at TEXT,
+            started_at TEXT,
+            feedback_note TEXT,
+            FOREIGN KEY (assignment_id) REFERENCES assignments(id),
+            FOREIGN KEY (student_id) REFERENCES users(id)
+        );
     """)
     _ensure_column(cur, "users", "organization_id", "INTEGER")
     _ensure_column(cur, "users", "role", "TEXT DEFAULT 'student'")
@@ -119,6 +151,7 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_time ON chat_sessions(user_id, updated_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_org_role ON users(organization_id, role)")
     _ensure_column(cur, "users", "password_hash", "TEXT")
+    _ensure_column(cur, "assignment_submissions", "feedback_note", "TEXT")
     conn.commit()
     conn.close()
 

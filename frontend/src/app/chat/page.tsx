@@ -274,7 +274,7 @@ export default function ChatPage() {
   async function loadCatalog() {
     try {
       const result = await api.getRagCatalog() as RagCatalog;
-      if (result && result.ready) {
+      if (result && result.ready && result.classes && result.classes.length > 0) {
         setCatalog(result);
       } else {
         setCatalog(PREVIEW_CATALOG);
@@ -991,6 +991,33 @@ export default function ChatPage() {
                   <FileText size={13} />
                   Textbook citations are shown whenever Sakhi uses RAG context.
                 </div>
+                {(messages.length > 0 || ragFilters.subject || ragFilters.chapter) && (
+                  <motion.button
+                    whileHover={{ scale: 1.05, boxShadow: "0 0 15px rgba(16, 185, 129, 0.6)" }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => {
+                      const activeTopic = ragFilters.chapter || ragFilters.subject || user?.weak_subject || "General";
+                      router.push(`/quiz?topic=${encodeURIComponent(activeTopic)}`);
+                    }}
+                    style={{
+                      background: "linear-gradient(135deg, var(--emerald) 0%, #10b981 100%)",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "20px",
+                      padding: "6px 14px",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      boxShadow: "0 4px 10px rgba(16, 185, 129, 0.3)",
+                    }}
+                  >
+                    <Zap size={12} fill="white" />
+                    <span>Quick Quiz: {ragFilters.chapter || ragFilters.subject || user?.weak_subject || "General"}</span>
+                  </motion.button>
+                )}
                 <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                   Scope: Class {ragFilters.class_level || "All"} · {ragFilters.subject || "All subjects"} · {ragFilters.chapter || "All chapters"}
                 </div>

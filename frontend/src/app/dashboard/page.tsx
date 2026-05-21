@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import html2canvas from "html2canvas";
 
 import Sidebar from "@/components/Sidebar";
@@ -374,13 +375,284 @@ function DailyGoalCard({ userId, weakSubject }: { userId?: number; weakSubject?:
   );
 }
 
+const TIPS = [
+  "Consistency beats intensity. 10 minutes of learning every day compounds into massive success!",
+  "Make a mistake? Perfect! That is your brain building new neural connections. Keep going!",
+  "Don't study until you get it right; study until you can't get it wrong. Sakhi is here to help!",
+  "Your weak subjects are just areas of opportunity waiting to be unlocked. Let's conquer them!",
+  "Taking a quick 5-minute break every 25 minutes keeps your brain sharp and information retained.",
+];
+
+function WeeklyStreakCalendar({ history }: { history: HistoryItem[] }) {
+  const days = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const activeDates = new Set(
+    history.map((h) => {
+      const d = new Date(h.timestamp);
+      d.setHours(0, 0, 0, 0);
+      return d.toISOString().slice(0, 10);
+    })
+  );
+
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const hasQuiz = activeDates.has(dateStr);
+    days.push({
+      date: d,
+      name: d.toLocaleDateString("en-US", { weekday: "short" }),
+      dayNum: d.getDate(),
+      active: hasQuiz,
+      isToday: i === 0,
+    });
+  }
+
+  return (
+    <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+      <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+        <Calendar size={16} style={{ color: "var(--emerald)" }} /> Weekly Streak Consistency
+      </h2>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 10 }}>
+        {days.map((day, idx) => (
+          <div
+            key={idx}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              padding: "10px 4px",
+              borderRadius: "var(--radius-md)",
+              background: day.active
+                ? "linear-gradient(135deg, rgba(6, 78, 59, 0.1), rgba(13, 148, 136, 0.1))"
+                : day.isToday
+                ? "var(--bg-app)"
+                : "transparent",
+              border: day.isToday ? "1px solid var(--emerald)" : "1px solid transparent",
+            }}
+          >
+            <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, marginBottom: 6 }}>
+              {day.name}
+            </span>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: "50%",
+                background: day.active
+                  ? "linear-gradient(135deg, #064e3b, #0d9488)"
+                  : "var(--bg-surface)",
+                border: day.active ? "none" : "1.5px solid var(--border)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: day.active ? "white" : "var(--text-muted)",
+                fontSize: 13,
+                fontWeight: 700,
+                boxShadow: day.active ? "0 4px 10px rgba(13, 148, 136, 0.2)" : "none",
+              }}
+            >
+              {day.active ? "🔥" : day.dayNum}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AIStudyBuddyCard({ weakSubject }: { weakSubject?: string }) {
+  const [tipIndex, setTipIndex] = useState(() => {
+    if (typeof window === "undefined") return 0;
+    return new Date().getDate() % TIPS.length;
+  });
+
+  const rotateTip = () => {
+    setTipIndex((prev) => (prev + 1) % TIPS.length);
+  };
+
+  const getRevisionTopics = (subject?: string): Array<{ topic: string; icon: string }> => {
+    const sub = subject?.toLowerCase() || "";
+    if (sub.includes("science")) {
+      return [
+        { topic: "Photosynthesis & Plant Respiration", icon: "🌱" },
+        { topic: "Cell Structure & Functions", icon: "🔬" },
+        { topic: "Chemical Reactions & Equations", icon: "🧪" },
+      ];
+    } else if (sub.includes("math")) {
+      return [
+        { topic: "Quadratic Equations", icon: "🔢" },
+        { topic: "Trigonometric Identities", icon: "📐" },
+        { topic: "Probability & Statistics", icon: "📊" },
+      ];
+    } else if (sub.includes("history") || sub.includes("social")) {
+      return [
+        { topic: "The French Revolution", icon: "🏛️" },
+        { topic: "Nationalism in India", icon: "🌍" },
+        { topic: "Federalism & Democracy", icon: "⚖️" },
+      ];
+    }
+    return [
+      { topic: "Force & Laws of Motion", icon: "🚀" },
+      { topic: "Acid, Bases & Salts", icon: "🧪" },
+      { topic: "Real Numbers & Polynomials", icon: "🔢" },
+    ];
+  };
+
+  const revisionTopics = getRevisionTopics(weakSubject);
+
+  return (
+    <div
+      className="card"
+      style={{
+        padding: 22,
+        marginBottom: 16,
+        background: "linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(14, 165, 233, 0.05) 100%)",
+        border: "1.5px solid rgba(99, 102, 241, 0.15)",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+          <Sparkles size={16} style={{ color: "#6366f1" }} /> AI Study Buddy
+        </h2>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={rotateTip}
+          style={{ fontSize: 11, padding: "2px 8px", color: "#6366f1" }}
+        >
+          💡 Next Tip
+        </button>
+      </div>
+
+      <div
+        style={{
+          background: "var(--bg-surface)",
+          padding: "12px 14px",
+          borderRadius: "var(--radius-md)",
+          border: "1px solid var(--border-subtle)",
+          marginBottom: 16,
+        }}
+      >
+        <p style={{ fontSize: 13, color: "var(--text-primary)", fontStyle: "italic", margin: 0, lineHeight: 1.5 }}>
+          &ldquo;{TIPS[tipIndex]}&rdquo;
+        </p>
+      </div>
+
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
+          🎯 Recommended Revision for {weakSubject || "General Science"}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {revisionTopics.map((item, idx) => (
+            <Link
+              key={idx}
+              href={`/chat?topic=${encodeURIComponent(item.topic)}`}
+              className="btn btn-secondary btn-sm"
+              style={{
+                justifyContent: "flex-start",
+                padding: "8px 12px",
+                fontSize: 12,
+                background: "var(--bg-surface)",
+                border: "1.5px solid var(--border)",
+                textAlign: "left",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                display: "block",
+              }}
+            >
+              <span style={{ marginRight: 6 }}>{item.icon}</span>
+              {item.topic}
+            </Link>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function XPProgressRing({ xp, xpNext }: { xp: number; xpNext: number }) {
+  const level = Math.floor(xp / xpNext) + 1;
+  const progressPct = Math.min((xp / xpNext) * 100, 100);
+  const radius = 30;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (progressPct / 100) * circumference;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+      <div style={{ position: "relative", width: 72, height: 72, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <svg style={{ transform: "rotate(-90deg)", width: 72, height: 72 }}>
+          <circle
+            cx="36"
+            cy="36"
+            r={radius}
+            fill="transparent"
+            stroke="rgba(255, 255, 255, 0.15)"
+            strokeWidth="5"
+          />
+          <motion.circle
+            cx="36"
+            cy="36"
+            r={radius}
+            fill="transparent"
+            stroke="#6ee7b7"
+            strokeWidth="5"
+            strokeDasharray={circumference}
+            initial={{ strokeDashoffset: circumference }}
+            animate={{ strokeDashoffset }}
+            transition={{ duration: 1.2, ease: "easeOut" }}
+            strokeLinecap="round"
+            style={{
+              filter: "drop-shadow(0 0 3px #6ee7b7)",
+            }}
+          />
+        </svg>
+        <div style={{ position: "absolute", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ fontSize: "8px", fontWeight: 700, color: "rgba(255, 255, 255, 0.75)", textTransform: "uppercase", lineHeight: 1 }}>Lvl</span>
+          <span style={{ fontSize: "18px", fontWeight: 800, color: "white", lineHeight: 1 }}>{level}</span>
+        </div>
+      </div>
+      <div style={{ textAlign: "left" }}>
+        <div style={{ fontSize: "14px", fontWeight: 700, color: "white" }}>{xp} XP</div>
+        <div style={{ fontSize: "11px", color: "rgba(255, 255, 255, 0.75)" }}>{xpNext - xp} XP to Lvl {level + 1}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
-  const { user, sessionId } = useUser();
+  const router = useRouter();
+  const { user, sessionId, isReady } = useUser();
   const dashboardRef = useRef<HTMLDivElement>(null);
+
+  // Redirect non-students to their role-specific home page
+  useEffect(() => {
+    if (!isReady) return;
+    if (!user) { router.replace("/login"); return; }
+    if (user.role === "teacher") { router.replace("/teacher"); return; }
+    if (user.role === "parent")  { router.replace("/parent");  return; }
+    if (user.role === "admin")   { router.replace("/admin");   return; }
+  }, [isReady, user, router]);
   const [progress, setProgress] = useState<{ history: HistoryItem[]; streak: number } | null>(null);
   const [dashboard, setDashboard] = useState<DashboardMetrics | null>(null);
   const [report, setReport] = useState<StudentReport | null>(null);
-  const [artifacts, setArtifacts] = useState<SavedArtifact[]>([]);
+  const [artifacts, setArtifacts] = useState<SavedArtifact[]>(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("sakhi_library_backup");
+      if (stored) {
+        try {
+          return JSON.parse(stored);
+        } catch {
+          return [];
+        }
+      }
+    }
+    return [];
+  });
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [retryTopic, setRetryTopic] = useState<RetryTopic | null>(null);
   const [dueFlashcards, setDueFlashcards] = useState(0);
@@ -389,7 +661,7 @@ export default function DashboardPage() {
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
-    if (!user?.user_id) return;
+    if (!user?.user_id || user.role !== "student") return;
     const load = async () => {
       try {
         const [progressData, dashboardData, reportData] = await Promise.all([
@@ -401,7 +673,11 @@ export default function DashboardPage() {
         setDashboard(dashboardData);
         setReport(reportData);
         const artifactData = await api.listArtifacts(user.user_id) as { artifacts?: SavedArtifact[] };
-        setArtifacts(artifactData.artifacts || []);
+        const fetchedArtifacts = artifactData.artifacts || [];
+        setArtifacts(fetchedArtifacts);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("sakhi_library_backup", JSON.stringify(fetchedArtifacts));
+        }
         // Phase 8: load recommendations + due flashcards in parallel
         const [recData, dueData] = await Promise.all([
           (api.getRecommendations(user.user_id) as Promise<{ next_topics?: Recommendation[]; retry_topic?: RetryTopic | null }>).catch(() => null),
@@ -468,8 +744,26 @@ export default function DashboardPage() {
     );
   }
 
-  const isAdminView = user?.role === "admin";
-  const isSupportView = user?.role === "parent" || user?.role === "teacher";
+  if (!isReady) {
+    return (
+      <div className="app-shell">
+        <Sidebar />
+        <main className="main-content" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ width: 32, height: 32, border: "3px solid #e5e7eb", borderTopColor: "var(--emerald)", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto 12px" }} />
+            <p style={{ fontSize: 14, color: "var(--text-muted)" }}>Loading...</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (!user || user.role !== "student") {
+    return null;
+  }
+
+  const isAdminView = (user?.role as string) === "admin";
+  const isSupportView = (user?.role as string) === "parent" || (user?.role as string) === "teacher";
 
   return (
     <div className="app-shell">
@@ -549,13 +843,7 @@ export default function DashboardPage() {
               </p>
               <p style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.5px" }}>{user?.name || "Student"}</p>
             </div>
-            <div style={{ textAlign: "right" }}>
-              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", marginBottom: 4 }}>{xp} / {xpNext} XP</p>
-              <div style={{ width: 120, height: 6, background: "rgba(255,255,255,0.2)", borderRadius: 99 }}>
-                <div style={{ width: `${Math.min((xp / xpNext) * 100, 100)}%`, height: "100%", background: "#6ee7b7", borderRadius: 99, transition: "width 0.6s ease" }} />
-              </div>
-              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>Level {Math.floor(xp / xpNext) + 1}</p>
-            </div>
+            <XPProgressRing xp={xp} xpNext={xpNext} />
           </div>
 
           {/* Stat cards */}
@@ -580,6 +868,12 @@ export default function DashboardPage() {
           {(recommendations.length > 0 || retryTopic) && (
             <WhatToStudyNext recommendations={recommendations} retryTopic={retryTopic} />
           )}
+
+          {/* AI Study Buddy Card */}
+          <AIStudyBuddyCard weakSubject={user?.weak_subject} />
+
+          {/* Weekly Streak Calendar */}
+          <WeeklyStreakCalendar history={history} />
 
 
           <div className="card" style={{ padding: 22, marginBottom: 16 }}>

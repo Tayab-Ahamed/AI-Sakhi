@@ -10,6 +10,7 @@ import { getSubjectsForClass, getTopicsForSubjectAndClass } from "@/lib/curricul
 import {
   Plus, Trash2, Users, BookOpen, CheckCircle2, Clock,
   ClipboardList, Download, ChevronDown, ChevronUp, BarChart2, AlertCircle,
+  Flame, Award, MessageSquare, Edit2, Check, X,
 } from "lucide-react";
 
 type Assignment = {
@@ -34,6 +35,7 @@ type Submission = {
   total_questions: number;
   completed: number;
   submitted_at: string;
+  feedback_note?: string;
 };
 
 const DIFFICULTIES = ["easy", "medium", "hard"];
@@ -56,6 +58,28 @@ export default function TeacherPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [generatingReport, setGeneratingReport] = useState(false);
 
+  // New Analytics & Roster states
+  const [analytics, setAnalytics] = useState<{
+    quiz_average: number;
+    completion_rate: number;
+    struggling_count: number;
+    active_assignments: number;
+    total_students: number;
+  } | null>(null);
+  const [roster, setRoster] = useState<{
+    user_id: number;
+    name: string;
+    class_: string;
+    weak_subject: string | null;
+    streak: number;
+    xp: number;
+  }[]>([]);
+
+  // Feedback note states
+  const [editingFeedbackId, setEditingFeedbackId] = useState<number | null>(null);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [savingFeedback, setSavingFeedback] = useState(false);
+
   // Form state
   const [form, setForm] = useState({
     title: "", subject: "", topic: "", difficulty: "medium",
@@ -75,9 +99,9 @@ export default function TeacherPage() {
   }, [isReady, user, router]);
 
   useEffect(() => {
-    if (!user?.user_id) return;
-    void loadAssignments();
-  }, [user?.user_id]);
+    if (!user?.user_id || !["teacher", "admin"].includes(user.role || "")) return;
+    void loadTeacherData();
+  }, [user?.user_id, user?.role, user?.organization_id]);
 
   useEffect(() => {
     const s = getSubjectsForClass(form.class_) as unknown as string[];
@@ -92,16 +116,46 @@ export default function TeacherPage() {
     if (!t.includes(form.topic)) setForm((f) => ({ ...f, topic: t[0] || "" }));
   }, [form.subject, form.class_]);
 
-  const loadAssignments = async () => {
-    if (!user?.user_id) return;
+  const loadTeacherData = async () => {
+    if (!user?.user_id || !["teacher", "admin"].includes(user.role || "")) return;
     setLoading(true);
     try {
-      const data = await api.listAssignments({ teacher_id: user.user_id }) as unknown as Assignment[];
-      setAssignments(data);
+      const orgId = user.organization_id || 1;
+      const [assignData, analyticsData, rosterData] = await Promise.all([
+        api.listAssignments({ teacher_id: user.user_id }),
+        api.getClassAnalytics(orgId),
+        api.getOrganizationRoster(orgId),
+      ]);
+      setAssignments(assignData as unknown as Assignment[]);
+      setAnalytics(analyticsData as any);
+      setRoster((rosterData as any).roster || []);
     } catch {
       setAssignments([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveFeedback = async (submissionId: number, assignmentId: number) => {
+    if (!feedbackText.trim()) return;
+    setSavingFeedback(true);
+    try {
+      const updated = await api.updateSubmissionFeedback(submissionId, feedbackText) as any;
+      setSubmissions((prev) => {
+        const list = prev[assignmentId] || [];
+        return {
+          ...prev,
+          [assignmentId]: list.map((sub) =>
+            sub.id === submissionId ? { ...sub, feedback_note: updated.feedback_note } : sub
+          ),
+        };
+      });
+      setEditingFeedbackId(null);
+      setFeedbackText("");
+    } catch {
+      alert("Could not save feedback. Please try again.");
+    } finally {
+      setSavingFeedback(false);
     }
   };
 
@@ -129,7 +183,7 @@ export default function TeacherPage() {
       setFormSuccess("Assignment created successfully!");
       setForm((f) => ({ ...f, title: "", instructions: "", due_date: "" }));
       setShowForm(false);
-      await loadAssignments();
+      await loadTeacherData();
     } catch {
       setFormError("Could not create assignment. Please try again.");
     } finally {
@@ -157,7 +211,7 @@ export default function TeacherPage() {
     setDeletingId(id);
     try {
       await api.deleteAssignment(id, user.user_id);
-      await loadAssignments();
+      await loadTeacherData();
     } catch {
       alert("Could not delete. Please try again.");
     } finally {
@@ -188,6 +242,24 @@ export default function TeacherPage() {
   const totalCompleted = assignments.reduce((s, a) => s + (a.completed_count || 0), 0);
   const pendingCount   = assignments.filter((a) => !a.is_overdue).length;
   const overdueCount   = assignments.filter((a) => a.is_overdue).length;
+
+  if (!isReady) {
+    return (
+      <div className="app-shell">
+        <Sidebar />
+        <main className="main-content" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ width: 32, height: 32, border: "3px solid #e5e7eb", borderTopColor: "var(--emerald)", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto 12px" }} />
+            <p style={{ fontSize: 14, color: "var(--text-muted)" }}>Loading...</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (!user || !["teacher", "admin"].includes(user.role || "")) {
+    return null;
+  }
 
   return (
     <div className="app-shell">
@@ -224,19 +296,78 @@ export default function TeacherPage() {
           </div>
 
           {/* Stat row */}
+          {/* Class Analytics Panel */}
+          {analytics && (
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <BarChart2 size={18} style={{ color: "var(--emerald)" }} />
+                <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Class Performance & Insights</h2>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+                {/* Card 1: Quiz Average */}
+                <div className="card" style={{ padding: "20px 22px", background: "linear-gradient(135deg, var(--bg-surface) 0%, rgba(13, 148, 136, 0.05) 100%)", borderLeft: "4px solid #0d9488", boxShadow: "var(--shadow-md)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>Class Quiz Average</span>
+                    <BarChart2 size={16} style={{ color: "#0d9488" }} />
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 8 }}>
+                    <span style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)" }}>{analytics.quiz_average}%</span>
+                  </div>
+                  <div className="progress-track" style={{ height: 6, background: "rgba(0,0,0,0.06)", borderRadius: 3 }}>
+                    <div className="progress-fill" style={{ width: `${analytics.quiz_average}%`, height: "100%", background: "#0d9488", borderRadius: 3 }} />
+                  </div>
+                </div>
+
+                {/* Card 2: Assignment Completion Rate */}
+                <div className="card" style={{ padding: "20px 22px", background: "linear-gradient(135deg, var(--bg-surface) 0%, rgba(5, 150, 105, 0.05) 100%)", borderLeft: "4px solid #059669", boxShadow: "var(--shadow-md)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>Assignment Completion</span>
+                    <CheckCircle2 size={16} style={{ color: "#059669" }} />
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 8 }}>
+                    <span style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)" }}>{analytics.completion_rate}%</span>
+                  </div>
+                  <div className="progress-track" style={{ height: 6, background: "rgba(0,0,0,0.06)", borderRadius: 3 }}>
+                    <div className="progress-fill" style={{ width: `${analytics.completion_rate}%`, height: "100%", background: "#059669", borderRadius: 3 }} />
+                  </div>
+                </div>
+
+                {/* Card 3: Struggling Students */}
+                <div className="card" style={{ padding: "20px 22px", background: "linear-gradient(135deg, var(--bg-surface) 0%, rgba(239, 68, 68, 0.05) 100%)", borderLeft: "4px solid #ef4444", boxShadow: "var(--shadow-md)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 600 }}>Struggling Students</span>
+                    <AlertCircle size={16} style={{ color: "#ef4444" }} />
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                    <span style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)" }}>{analytics.struggling_count}</span>
+                    <span style={{ fontSize: 12, color: analytics.struggling_count > 0 ? "#dc2626" : "var(--text-muted)", fontWeight: 600 }}>
+                      {analytics.struggling_count > 0 ? "needs attention" : "all doing great!"}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "4px 0 0" }}>Average score below 60%</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Quick Stats overview */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, marginTop: 12 }}>
+            <ClipboardList size={18} style={{ color: "var(--text-secondary)" }} />
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Assignment Overview</h2>
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
             {[
-              { label: "Assignments",   value: assignments.length, icon: ClipboardList, color: "#0d9488" },
-              { label: "Submissions",   value: totalCompleted,     icon: CheckCircle2,  color: "#059669" },
-              { label: "Active",        value: pendingCount,       icon: Clock,         color: "#f59e0b" },
-              { label: "Overdue",       value: overdueCount,       icon: AlertCircle,   color: "#ef4444" },
+              { label: "Total Assignments", value: assignments.length, icon: ClipboardList, color: "#0d9488" },
+              { label: "Total Submissions", value: totalCompleted,     icon: CheckCircle2,  color: "#059669" },
+              { label: "Active",            value: pendingCount,       icon: Clock,         color: "#f59e0b" },
+              { label: "Overdue",           value: overdueCount,       icon: AlertCircle,   color: "#ef4444" },
             ].map(({ label, value, icon: Icon, color }) => (
-              <div key={label} className="card" style={{ padding: "16px 18px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                  <Icon size={15} style={{ color }} />
-                  <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>{label}</span>
+              <div key={label} className="card" style={{ padding: "14px 16px", boxShadow: "var(--shadow-sm)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <Icon size={14} style={{ color }} />
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>{label}</span>
                 </div>
-                <div style={{ fontSize: 26, fontWeight: 800, color: "var(--text-primary)" }}>{value}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)" }}>{value}</div>
               </div>
             ))}
           </div>
@@ -425,6 +556,7 @@ export default function TeacherPage() {
                                     <th>Score</th>
                                     <th>%</th>
                                     <th>Submitted</th>
+                                    <th>Feedback Note</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -437,6 +569,51 @@ export default function TeacherPage() {
                                       </td>
                                       <td style={{ color: "var(--text-muted)" }}>
                                         {new Date(s.submitted_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                                      </td>
+                                      <td>
+                                        {editingFeedbackId === s.id ? (
+                                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                            <input
+                                              className="input"
+                                              style={{ padding: "4px 8px", fontSize: 12, minWidth: 140, margin: 0 }}
+                                              placeholder="Leave a helpful note..."
+                                              value={feedbackText}
+                                              onChange={(e) => setFeedbackText(e.target.value)}
+                                              autoFocus
+                                            />
+                                            <button
+                                              className="btn btn-primary btn-sm"
+                                              style={{ padding: "4px 8px", fontSize: 11, height: "auto" }}
+                                              onClick={() => void handleSaveFeedback(s.id, a.id)}
+                                              disabled={savingFeedback}
+                                            >
+                                              Save
+                                            </button>
+                                            <button
+                                              className="btn btn-secondary btn-sm"
+                                              style={{ padding: "4px 8px", fontSize: 11, height: "auto" }}
+                                              onClick={() => setEditingFeedbackId(null)}
+                                            >
+                                              Cancel
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                                            <span style={{ fontSize: 12, color: s.feedback_note ? "var(--text-primary)" : "var(--text-muted)", fontStyle: s.feedback_note ? "normal" : "italic" }}>
+                                              {s.feedback_note || "No feedback left yet."}
+                                            </span>
+                                            <button
+                                              className="btn btn-secondary btn-sm"
+                                              style={{ padding: "2px 6px", height: "auto", fontSize: 10 }}
+                                              onClick={() => {
+                                                setEditingFeedbackId(s.id);
+                                                setFeedbackText(s.feedback_note || "");
+                                              }}
+                                            >
+                                              <Edit2 size={10} style={{ marginRight: 2 }} /> {s.feedback_note ? "Edit" : "Add"}
+                                            </button>
+                                          </div>
+                                        )}
                                       </td>
                                     </tr>
                                   ))}
@@ -452,6 +629,94 @@ export default function TeacherPage() {
               })}
             </div>
           )}
+
+          {/* Student Roster Section */}
+          <div className="card" style={{ marginTop: 32, padding: 24, boxShadow: "var(--shadow-lg)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, borderRadius: "50%", background: "rgba(5, 150, 105, 0.1)", color: "var(--emerald)" }}>
+                <Users size={18} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>Class Student Directory</h2>
+                <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>Active students registered in your organization.</p>
+              </div>
+            </div>
+
+            {roster.length === 0 ? (
+              <p style={{ fontSize: 14, color: "var(--text-muted)", fontStyle: "italic", textAlign: "center", padding: "20px 0" }}>No students registered yet.</p>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table className="lb-table" style={{ width: "100%" }}>
+                  <thead>
+                    <tr>
+                      <th>Student</th>
+                      <th>Class</th>
+                      <th>Streak</th>
+                      <th>XP Points</th>
+                      <th>Weak Subject</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roster.map((student) => {
+                      // Get initials
+                      const initials = student.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+                      // Get XP badge title
+                      let xpBadge = { label: "Bronze", color: "#b45309", bg: "#fef3c7" };
+                      if (student.xp >= 1000) xpBadge = { label: "Platinum", color: "#0369a1", bg: "#e0f2fe" };
+                      else if (student.xp >= 500) xpBadge = { label: "Gold", color: "#a16207", bg: "#fef9c3" };
+                      else if (student.xp >= 200) xpBadge = { label: "Silver", color: "#4b5563", bg: "#f3f4f6" };
+
+                      return (
+                        <tr key={student.user_id}>
+                          <td style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 10px" }}>
+                            <div style={{
+                              width: 32, height: 32, borderRadius: "50%",
+                              background: "linear-gradient(135deg, var(--emerald) 0%, #0d9488 100%)",
+                              color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+                              fontSize: 12, fontWeight: 700
+                            }}>
+                              {initials}
+                            </div>
+                            <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{student.name}</span>
+                          </td>
+                          <td style={{ fontWeight: 500 }}>Class {student.class_}</td>
+                          <td>
+                            <div style={{ display: "flex", alignItems: "center", gap: 4, fontWeight: 700, color: student.streak > 0 ? "#f59e0b" : "var(--text-muted)" }}>
+                              <Flame size={14} style={{ fill: student.streak > 0 ? "#f59e0b" : "none" }} />
+                              {student.streak} days
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ fontWeight: 800, color: "var(--text-primary)" }}>{student.xp} XP</span>
+                              <span style={{
+                                fontSize: 10, fontWeight: 700, padding: "2px 8px",
+                                borderRadius: 12, background: xpBadge.bg, color: xpBadge.color
+                              }}>
+                                {xpBadge.label}
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            {student.weak_subject ? (
+                              <span style={{
+                                fontSize: 11, fontWeight: 600, padding: "2px 8px",
+                                borderRadius: 99, background: "#fee2e2", color: "#ef4444"
+                              }}>
+                                {student.weak_subject}
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: 12, color: "var(--emerald)", fontWeight: 600 }}>Consistent Mastery</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       </main>
     </div>

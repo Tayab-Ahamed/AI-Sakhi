@@ -260,7 +260,7 @@ def generate_student_report_data(user_id: int) -> dict:
     class_ = str(user.get("class") or user.get("class_") or "8")
     assignments_done = cur.execute(
         """
-        SELECT a.title, a.topic, s.score, s.total_questions, s.submitted_at
+        SELECT a.title, a.topic, s.score, s.total_questions, s.submitted_at, s.feedback_note
         FROM assignment_submissions s
         JOIN assignments a ON a.id = s.assignment_id
         WHERE s.student_id = ? AND s.completed = 1
@@ -313,3 +313,104 @@ def _enrich_assignment(a: dict) -> dict:
     else:
         a["is_overdue"] = False
     return a
+
+
+def get_organization_roster(organization_id: int) -> list[dict]:
+    """Get student roster in the organization, including streak, XP, and weak subject."""
+    from backend.db import get_streak, get_user_xp
+    conn = _conn()
+    cur = conn.cursor()
+    rows = cur.execute(
+        "SELECT id, name, class, weak_subject, last_active_at FROM users WHERE organization_id = ? AND role = 'student' ORDER BY name",
+        (organization_id,),
+    ).fetchall()
+    roster = []
+    for r in rows:
+        student_id = r["id"]
+        streak = get_streak(student_id)
+        xp = get_user_xp(student_id)
+        d = dict(r)
+        d["user_id"] = d.pop("id")
+        d["class_"] = d.pop("class")
+        d["streak"] = streak
+        d["xp"] = xp
+        roster.append(d)
+    conn.close()
+    return roster
+
+
+def get_class_analytics(organization_id: int) -> dict:
+    """Calculate overall class quiz average score, assignment completion rate, and count of struggling students."""
+    conn = _conn()
+    cur = conn.cursor()
+    
+    # 1. Overall quiz average score pct
+    avg_row = cur.execute(
+        """
+        SELECT AVG(CAST(score AS FLOAT) / NULLIF(total, 0)) * 100 as avg_pct
+        FROM progress
+        WHERE user_id IN (SELECT id FROM users WHERE organization_id = ? AND role = 'student')
+        """,
+        (organization_id,),
+    ).fetchone()
+    avg_score = round(avg_row["avg_pct"], 1) if avg_row and avg_row["avg_pct"] is not None else 0.0
+
+    # 2. Total completion rate for active assignments
+    active_assigns = cur.execute(
+        "SELECT COUNT(*) FROM assignments WHERE organization_id = ? AND is_active = 1",
+        (organization_id,),
+    ).fetchone()[0]
+    
+    total_students = cur.execute(
+        "SELECT COUNT(*) FROM users WHERE organization_id = ? AND role = 'student'",
+        (organization_id,),
+    ).fetchone()[0]
+    
+    completed_subs = cur.execute(
+        """
+        SELECT COUNT(*) FROM assignment_submissions s
+        JOIN assignments a ON a.id = s.assignment_id
+        WHERE a.organization_id = ? AND a.is_active = 1 AND s.completed = 1
+        """,
+        (organization_id,),
+    ).fetchone()[0]
+    
+    expected = active_assigns * total_students
+    completion_rate = round((completed_subs / expected) * 100, 1) if expected > 0 else 0.0
+
+    # 3. Count of struggling students (average quiz score < 60%)
+    struggling_count = cur.execute(
+        """
+        SELECT COUNT(*) FROM (
+            SELECT user_id, AVG(CAST(score AS FLOAT) / NULLIF(total, 0)) * 100 as avg_pct
+            FROM progress
+            WHERE user_id IN (SELECT id FROM users WHERE organization_id = ? AND role = 'student')
+            GROUP BY user_id
+            HAVING avg_pct < 60.0
+        )
+        """,
+        (organization_id,),
+    ).fetchone()[0]
+
+    conn.close()
+    return {
+        "quiz_average": avg_score,
+        "completion_rate": completion_rate,
+        "struggling_count": struggling_count,
+        "active_assignments": active_assigns,
+        "total_students": total_students,
+    }
+
+
+def update_submission_feedback(submission_id: int, feedback_note: str) -> dict | None:
+    """Update feedback note on an assignment submission."""
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE assignment_submissions SET feedback_note = ? WHERE id = ?",
+        (feedback_note.strip(), submission_id),
+    )
+    conn.commit()
+    row = cur.execute("SELECT * FROM assignment_submissions WHERE id = ?", (submission_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
