@@ -1,38 +1,66 @@
-# Virtual Environment
+# ── Python ────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.Python
+
+# Virtual environments
 venv/
 env/
+.venv/
+ENV/
+
+# ── Environment & Secrets ─────────────────────────────────────────
 .env
-.env.*
-!.env.example
-__pycache__/
-*.pyc
+.env.local
+.env.production
+*.pem
+*.key
 
-# Database
-*.db
+# ── Database ──────────────────────────────────────────────────────
+sakhi.db
+sakhi.db-shm
+sakhi.db-wal
+*.sqlite
 *.sqlite3
-backend/database.db
+data/
 
-# Node
+# ── Vector DB / ML ────────────────────────────────────────────────
+chroma_db/
+*.pkl
+*.bin
+*.safetensors
+__pycache__/
+
+# ── Node / Next.js ────────────────────────────────────────────────
 node_modules/
-dist/
-.next/
-build/
-npm-debug.log
-yarn-error.log
+frontend/.next/
+frontend/out/
+frontend/.turbo/
+frontend/coverage/
+.npm
+.yarn
 
-# IDEs
+# ── Testing ───────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ── IDE & OS ──────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# MacOS
 .DS_Store
+Thumbs.db
+desktop.ini
 
-# Logs
-*.log
-logs/
-
-# Secrets
-secret/
-credentials/
+# ── Docker ────────────────────────────────────────────────────────
+docker-compose.override.yml
