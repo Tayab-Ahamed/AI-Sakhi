@@ -151,7 +151,27 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_time ON chat_sessions(user_id, updated_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_org_role ON users(organization_id, role)")
     _ensure_column(cur, "users", "password_hash", "TEXT")
+    _ensure_column(cur, "users", "email", "TEXT")
+    _ensure_column(cur, "users", "parent_id", "INTEGER")
+    _ensure_column(cur, "users", "is_active", "INTEGER DEFAULT 1")
+    _ensure_column(cur, "organizations", "join_code", "TEXT")
     _ensure_column(cur, "assignment_submissions", "feedback_note", "TEXT")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS flashcard_reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            card_id TEXT NOT NULL,
+            topic TEXT,
+            ef REAL DEFAULT 2.5,
+            interval INTEGER DEFAULT 1,
+            repetitions INTEGER DEFAULT 0,
+            next_review_at TEXT,
+            last_reviewed_at TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(user_id, card_id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -648,3 +668,101 @@ def get_user_xp(user_id: int) -> int:
     total += (streak_row["best_streak"] or 0) * 15
     conn.close()
     return total
+
+
+def get_leaderboard(org_id: int) -> list[dict]:
+    """Return all students in org ranked by XP, with streak and quiz counts (single-pass query)."""
+    conn = get_connection()
+    cur = conn.cursor()
+    XP_MAP = {
+        "progress_updated": 10,
+        "study_notes_generated": 5,
+        "flashcards_generated": 3,
+        "study_plan_generated": 4,
+        "chat_message": 1,
+    }
+    students = cur.execute(
+        "SELECT id, name, class, language FROM users WHERE organization_id = ? AND role = 'student' AND (is_active IS NULL OR is_active = 1)",
+        (org_id,),
+    ).fetchall()
+    results = []
+    for s in students:
+        uid = s["id"]
+        total_xp = 0
+        for event_type, xp in XP_MAP.items():
+            row = cur.execute(
+                "SELECT COUNT(*) as cnt FROM learning_events WHERE user_id = ? AND event_type = ?",
+                (uid, event_type),
+            ).fetchone()
+            total_xp += (row["cnt"] or 0) * xp
+        streak_row = cur.execute(
+            "SELECT MAX(streak) as best_streak FROM progress WHERE user_id = ?", (uid,)
+        ).fetchone()
+        best_streak = streak_row["best_streak"] or 0
+        total_xp += best_streak * 15
+        stats_row = cur.execute(
+            "SELECT COUNT(*) as cnt, AVG(CAST(score AS FLOAT)/NULLIF(total,0)*100) as avg_pct FROM progress WHERE user_id = ?",
+            (uid,),
+        ).fetchone()
+        results.append({
+            "user_id": uid,
+            "name": s["name"],
+            "class_": s["class"],
+            "xp": total_xp,
+            "streak": best_streak,
+            "quiz_count": stats_row["cnt"] or 0,
+            "avg_pct": round(stats_row["avg_pct"] or 0, 1),
+        })
+    conn.close()
+    results.sort(key=lambda x: x["xp"], reverse=True)
+    return results
+
+
+def get_children(parent_id: int) -> list[dict]:
+    """Return students linked to this parent."""
+    conn = get_connection()
+    cur = conn.cursor()
+    rows = cur.execute(
+        "SELECT * FROM users WHERE parent_id = ? AND (is_active IS NULL OR is_active = 1)",
+        (parent_id,),
+    ).fetchall()
+    conn.close()
+    return [_user_from_row(r) for r in rows if r]
+
+
+def link_child_to_parent(parent_id: int, child_id: int) -> bool:
+    """Link a student to a parent user."""
+    conn = get_connection()
+    conn.execute("UPDATE users SET parent_id = ? WHERE id = ?", (parent_id, child_id))
+    conn.commit()
+    conn.close()
+    return True
+
+
+def deactivate_user(user_id: int) -> bool:
+    """Soft-delete a user by setting is_active = 0."""
+    conn = get_connection()
+    conn.execute("UPDATE users SET is_active = 0 WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_org_by_join_code(join_code: str) -> dict | None:
+    """Find an organization by its join code."""
+    conn = get_connection()
+    org_row = conn.execute(
+        "SELECT id, name, slug, tier FROM organizations WHERE join_code = ?",
+        (join_code.strip().upper(),),
+    ).fetchone()
+    conn.close()
+    return dict(org_row) if org_row else None
+
+
+def set_org_join_code(org_id: int, join_code: str) -> bool:
+    """Set the join code for an organization."""
+    conn = get_connection()
+    conn.execute("UPDATE organizations SET join_code = ? WHERE id = ?", (join_code.strip().upper(), org_id))
+    conn.commit()
+    conn.close()
+    return True

@@ -58,9 +58,12 @@ export default function AdminPage() {
     if (!user?.organization_id || user.role !== "admin") return;
     setLoading(true);
     try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("sakhi_auth") : null;
+      const headers: HeadersInit = token ? { "Authorization": `Bearer ${token}` } : {};
       // Load users
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/users?organization_id=${user?.organization_id}`
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/users?organization_id=${user?.organization_id}`,
+        { headers }
       );
       const data = await res.json();
       setUsers(data.users || []);
@@ -76,22 +79,37 @@ export default function AdminPage() {
     }
   };
 
-  const changeRole = async (userId: number, newRole: string) => {
+  const changeRole = async (userId: number, newRole: string, userName: string) => {
+    if (!confirm(`Change ${userName}'s role to "${newRole}"? This affects what they can access.`)) return;
     setUpdatingId(userId);
     try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("sakhi_auth") : null;
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
       await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/users/${userId}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ role: newRole }),
-        }
+        { method: "PUT", headers, body: JSON.stringify({ role: newRole }) }
       );
       setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, role: newRole } : u));
     } catch {
       alert("Could not update role.");
     } finally {
       setUpdatingId(null);
+    }
+  };
+
+  const deleteUser = async (userId: number, userName: string) => {
+    if (!confirm(`Deactivate ${userName}? They will be removed from the system. This cannot be undone.`)) return;
+    try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("sakhi_auth") : null;
+      const headers: HeadersInit = token ? { "Authorization": `Bearer ${token}` } : {};
+      await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/users/${userId}`,
+        { method: "DELETE", headers }
+      );
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
+    } catch {
+      alert("Could not deactivate user.");
     }
   };
 
@@ -405,7 +423,7 @@ export default function AdminPage() {
                         <td>
                           <select
                             value={u.role || "student"}
-                            onChange={(e) => void changeRole(u.id, e.target.value)}
+                            onChange={(e) => void changeRole(u.id, e.target.value, u.name)}
                             disabled={updatingId === u.id || u.id === user?.user_id}
                             style={{
                               padding: "4px 10px", 
@@ -422,6 +440,22 @@ export default function AdminPage() {
                           >
                             {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                           </select>
+                        </td>
+                        <td>
+                          {u.id !== user?.user_id && (
+                            <button
+                              onClick={() => void deleteUser(u.id, u.name)}
+                              title="Deactivate user"
+                              style={{
+                                background: "none", border: "1.5px solid #fecaca", borderRadius: 8,
+                                cursor: "pointer", color: "#dc2626", padding: "4px 8px",
+                                display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600,
+                                fontFamily: "Inter, sans-serif",
+                              }}
+                            >
+                              <Trash2 size={11} /> Deactivate
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );

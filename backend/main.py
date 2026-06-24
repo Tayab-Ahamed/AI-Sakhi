@@ -23,17 +23,25 @@ from backend.chat import chat, clear_session
 from backend.config import DB_PATH, GROQ_MODEL
 from backend.db import (
     create_user,
+    deactivate_user,
     ensure_default_organization,
     get_all_users,
     get_chat_history,
+    get_children,
+    get_connection,
     get_dashboard_metrics,
+    get_leaderboard,
+    get_org_by_join_code,
     get_streak,
     get_student_report,
     get_user,
     get_user_progress,
     get_user_with_org,
     init_db,
+    link_child_to_parent,
     log_event,
+    now_iso,
+    set_org_join_code,
     update_progress,
     update_user,
 )
@@ -91,8 +99,12 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup():
+    import os
     init_db()
     ensure_default_organization()
+    secret = os.environ.get("SAKHI_JWT_SECRET", "sakhi-dev-secret-change-in-production")
+    if secret == "sakhi-dev-secret-change-in-production":
+        print("[WARNING] SAKHI_JWT_SECRET is not set — using insecure default. Set this env var before deploying!")
     print("[OK] AI Sakhi backend started. DB initialized.")
 
 
@@ -833,8 +845,6 @@ def api_generate_student_report_data(userId: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-class FeedbackUpdateRequest(BaseModel):
-    feedback_note: str
 
 
 @app.get("/analytics/class/{org_id}")
@@ -1000,6 +1010,162 @@ def api_daily_activity(org_id: int):
         return {"activity": activity}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class AssignmentUpdateRequest(BaseModel):
+    title: str
+    subject: str
+    topic: str
+    difficulty: str = "medium"
+    instructions: Optional[str] = None
+    due_date: Optional[str] = None
+
+
+class LinkChildRequest(BaseModel):
+    parent_id: int
+    child_id: int
+
+
+class JoinOrgRequest(BaseModel):
+    user_id: int
+    join_code: str
+
+
+class FeedbackSuggestionRequest(BaseModel):
+    topic: str
+    score: int
+    total: int
+    student_name: str = "Student"
+    language: str = "English"
+
+
+@app.get("/recommendations/{user_id}")
+def api_recommendations(user_id: int):
+    """Return AI-powered next topic recommendations for a student."""
+    from backend.recommendations import get_recommendations
+    try:
+        return get_recommendations(user_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/quiz/recommended-difficulty/{user_id}")
+def api_recommended_difficulty(user_id: int, topic: Optional[str] = None):
+    """Return adaptive difficulty recommendation for a student."""
+    from backend.adaptive import get_difficulty_context
+    try:
+        return get_difficulty_context(user_id, topic=topic)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/leaderboard/{org_id}")
+def api_leaderboard(org_id: int):
+    """Return org leaderboard — all students ranked by XP in one efficient query."""
+    try:
+        board = get_leaderboard(org_id)
+        return {"leaderboard": board, "total": len(board)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/assignments/{assignment_id}")
+def api_update_assignment(assignment_id: int, req: AssignmentUpdateRequest):
+    """Teacher updates an existing assignment."""
+    try:
+        conn = get_connection()
+        conn.execute(
+            "UPDATE assignments SET title=?, subject=?, topic=?, difficulty=?, instructions=?, due_date=?, updated_at=? WHERE id=? AND is_active=1",
+            (req.title, req.subject, req.topic, req.difficulty, req.instructions, req.due_date, now_iso(), assignment_id),
+        )
+        conn.commit()
+        conn.close()
+        return {"ok": True, "message": "Assignment updated"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/users/{user_id}")
+def api_deactivate_user(user_id: int):
+    """Soft-delete (deactivate) a user."""
+    try:
+        deactivate_user(user_id)
+        return {"ok": True, "message": "User deactivated"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/parent/children/{parent_id}")
+def api_get_children(parent_id: int):
+    """Return all students linked to a parent."""
+    try:
+        return {"children": get_children(parent_id)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/parent/link-child")
+def api_link_child(req: LinkChildRequest):
+    """Link a student to a parent account."""
+    try:
+        link_child_to_parent(req.parent_id, req.child_id)
+        return {"ok": True, "message": "Child linked to parent"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/organizations/join")
+def api_join_org(req: JoinOrgRequest):
+    """Join an organization using its join code."""
+    org = get_org_by_join_code(req.join_code)
+    if not org:
+        raise HTTPException(status_code=404, detail="Invalid join code")
+    conn = get_connection()
+    conn.execute("UPDATE users SET organization_id = ? WHERE id = ?", (org["id"], req.user_id))
+    conn.commit()
+    conn.close()
+    return {"ok": True, "organization": org}
+
+
+@app.post("/organizations/{org_id}/generate-code")
+def api_generate_join_code(org_id: int):
+    """Generate a new join code for an organization (admin only)."""
+    import secrets
+    code = secrets.token_hex(3).upper()
+    set_org_join_code(org_id, code)
+    return {"join_code": code}
+
+
+@app.post("/ai/feedback-suggestion")
+def api_feedback_suggestion(req: FeedbackSuggestionRequest):
+    """Generate 3 AI-suggested feedback phrases for a teacher."""
+    import os
+    from groq import Groq
+    from backend.config import GROQ_MODEL
+    try:
+        client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
+        pct = round((req.score / req.total) * 100) if req.total > 0 else 0
+        performance = "excellent" if pct >= 80 else ("good" if pct >= 60 else ("average" if pct >= 40 else "struggling"))
+        prompt = f"""Student {req.student_name} scored {req.score}/{req.total} ({pct}%) on '{req.topic}'. Performance: {performance}.
+Generate exactly 3 short encouraging teacher feedback phrases (1-2 sentences each). Constructive, warm, topic-specific.
+Return ONLY a JSON array of 3 strings. Language: {req.language}"""
+        resp = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7, max_tokens=300,
+        )
+        import json, re as _re
+        raw = resp.choices[0].message.content.strip()
+        raw = _re.sub(r"^```[a-z]*\n?", "", raw)
+        raw = _re.sub(r"\n?```$", "", raw)
+        suggestions = json.loads(raw)
+        return {"suggestions": suggestions[:3]}
+    except Exception:
+        return {"suggestions": [
+            f"Good effort on {req.topic}! Keep practicing.",
+            f"You scored {req.score}/{req.total} — try reviewing the key concepts again.",
+            "I believe in you — consistent practice will help you improve!"
+        ]}
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { useUser } from "@/lib/user-context";
 import { api } from "@/lib/api";
-import { FileText, Download, Loader2, ChevronDown, ChevronRight, Printer } from "lucide-react";
+import { FileText, Download, Loader2, ChevronDown, ChevronRight, Printer, BookOpen } from "lucide-react";
 import { getSubjectsForClass } from "@/lib/curriculum";
 
 type Question = {
@@ -81,6 +81,22 @@ export default function PracticePaperPage() {
   };
 
   const handlePrint = () => window.print();
+
+  const handleSavePaper = async () => {
+    if (!paper || !user?.user_id) { alert("Please log in to save papers."); return; }
+    try {
+      await api.saveArtifact({
+        user_id: user.user_id,
+        artifact_type: "practice_paper",
+        title: `Practice Paper: ${paper.subject} — ${paper.title}`,
+        topic: paper.subject,
+        payload: { paper, generated_at: new Date().toISOString() },
+      });
+      alert("Paper saved to your library! 📚");
+    } catch {
+      alert("Could not save paper. Please try again.");
+    }
+  };
 
   return (
     <div className="app-shell">
@@ -171,6 +187,9 @@ export default function PracticePaperPage() {
                   </button>
                   <button className="btn btn-secondary" onClick={handlePrint} style={{ gap: 6, fontSize: 13 }}>
                     <Printer size={14} /> Print Paper
+                  </button>
+                  <button className="btn btn-secondary" onClick={() => void handleSavePaper()} style={{ gap: 6, fontSize: 13 }}>
+                    <BookOpen size={14} /> Save to Library
                   </button>
                 </div>
               </div>

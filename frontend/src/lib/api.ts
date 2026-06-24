@@ -276,6 +276,27 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ feedback_note: feedbackNote }),
     }),
+  updateAssignment: (assignmentId: number, data: { title: string; subject: string; topic: string; difficulty: string; instructions?: string; due_date?: string }) =>
+    apiFetch(`/assignments/${assignmentId}`, { method: "PUT", body: JSON.stringify(data) }),
+  getFeedbackSuggestions: (data: { topic: string; score: number; total: number; student_name?: string; language?: string }) =>
+    apiFetch("/ai/feedback-suggestion", { method: "POST", body: JSON.stringify(data) }),
+
+  // ── Leaderboard ────────────────────────────────────────────────────────────
+  getLeaderboard: (orgId: number) => apiFetch(`/leaderboard/${orgId}`),
+
+  // ── User Management ────────────────────────────────────────────────────────
+  deactivateUser: (userId: number) => apiFetch(`/users/${userId}`, { method: "DELETE" }),
+
+  // ── Parent Tools ───────────────────────────────────────────────────────────
+  getChildren: (parentId: number) => apiFetch(`/parent/children/${parentId}`),
+  linkChild: (parentId: number, childId: number) =>
+    apiFetch("/parent/link-child", { method: "POST", body: JSON.stringify({ parent_id: parentId, child_id: childId }) }),
+
+  // ── Organization ───────────────────────────────────────────────────────────
+  joinOrg: (userId: number, joinCode: string) =>
+    apiFetch("/organizations/join", { method: "POST", body: JSON.stringify({ user_id: userId, join_code: joinCode }) }),
+  generateJoinCode: (orgId: number) =>
+    apiFetch(`/organizations/${orgId}/generate-code`, { method: "POST" }),
 };
 
 // ── Streaming Chat via SSE ────────────────────────────────────────────────────

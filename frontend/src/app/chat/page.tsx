@@ -473,6 +473,10 @@ export default function ChatPage() {
           user_name: user.name,
           weak_subject: user.weak_subject,
           user_id: user.user_id,
+          // Pass active RAG filters so textbook-specific context is applied
+          ...(ragFilters.class_level && { rag_class_level: ragFilters.class_level }),
+          ...(ragFilters.subject && { rag_subject: ragFilters.subject }),
+          ...(ragFilters.chapter && { rag_chapter: ragFilters.chapter }),
         },
         (chunk) => {
           // Append chunk to the streaming bubble

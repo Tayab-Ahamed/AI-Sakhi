@@ -35,58 +35,63 @@ export default function LeaderboardPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"xp" | "streak" | "quizzes">("xp");
 
+
   useEffect(() => {
+    if (!user?.organization_id) return;
     const load = async () => {
       try {
-        const dashboard = await api.getDashboard(user?.organization_id) as { users?: LeaderUser[] };
-        const users: LeaderUser[] = dashboard.users || [];
-
-        // For each student user, fetch their progress
-        const studentUsers = users.filter((u) => u.role === "student");
-        const enriched = await Promise.all(
-          studentUsers.map(async (u) => {
-            try {
-              const prog = await api.getProgress(u.user_id) as { history?: Array<{ score: number; total: number; streak: number }>; streak?: number };
-              const history: Array<{ score: number; total: number; streak: number }> = prog.history || [];
-              const streak: number = prog.streak || 0;
-              const quizzes = history.length;
-              const xp = quizzes * 50 + streak * 20;
-              const avg = quizzes
-                ? Math.round(history.reduce((a: number, h: { score: number; total: number }) => a + (h.score / h.total) * 100, 0) / quizzes)
-                : 0;
-              return {
-                user_id: u.user_id,
-                name: u.name,
-                class_: u.class_,
-                role: u.role,
-                org: u.organization_name || "Demo School",
-                xp,
-                streak,
-                quizzes,
-                avg,
-              };
-            } catch {
-              return {
-                user_id: u.user_id,
-                name: u.name,
-                class_: u.class_,
-                role: u.role,
-                org: u.organization_name || "Demo School",
-                xp: 0, streak: 0, quizzes: 0, avg: 0,
-              };
-            }
-          })
-        );
-
-        enriched.sort((a, b) => b[filter] - a[filter]);
-        setEntries(enriched);
+        // Use the dedicated leaderboard endpoint (single query, no N+1)
+        const data = await api.getLeaderboard(user.organization_id!) as {
+          leaderboard?: Array<{
+            user_id: number; name: string; class_: string;
+            xp: number; streak: number; quiz_count: number; avg_pct: number;
+          }>;
+        };
+        if (data.leaderboard && data.leaderboard.length > 0) {
+          const mapped: LeaderEntry[] = data.leaderboard.map((e) => ({
+            user_id: e.user_id,
+            name: e.name,
+            class_: e.class_,
+            role: "student",
+            org: user.organization_name || "Demo School",
+            xp: e.xp,
+            streak: e.streak,
+            quizzes: e.quiz_count,
+            avg: Math.round(e.avg_pct),
+          }));
+          setEntries(mapped);
+        }
+      } catch {
+        // Fallback: fetch dashboard + individual progress (N+1 — kept as backup)
+        try {
+          const dashboard = await api.getDashboard(user?.organization_id) as { users?: LeaderUser[] };
+          const users: LeaderUser[] = dashboard.users || [];
+          const studentUsers = users.filter((u) => u.role === "student");
+          const enriched = await Promise.all(
+            studentUsers.map(async (u) => {
+              try {
+                const prog = await api.getProgress(u.user_id) as { history?: Array<{ score: number; total: number; streak: number }>; streak?: number };
+                const history = prog.history || [];
+                const streak = prog.streak || 0;
+                const quizzes = history.length;
+                const xp = quizzes * 50 + streak * 20;
+                const avg = quizzes
+                  ? Math.round(history.reduce((a, h) => a + (h.score / h.total) * 100, 0) / quizzes) : 0;
+                return { user_id: u.user_id, name: u.name, class_: u.class_, role: u.role, org: u.organization_name || "Demo School", xp, streak, quizzes, avg };
+              } catch {
+                return { user_id: u.user_id, name: u.name, class_: u.class_, role: u.role, org: "Demo School", xp: 0, streak: 0, quizzes: 0, avg: 0 };
+              }
+            })
+          );
+          setEntries(enriched);
+        } catch { /* silent */ }
       } finally {
         setLoading(false);
       }
     };
     load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+  }, [user?.organization_id]);
 
   const sorted = [...entries].sort((a, b) => b[filter] - a[filter]);
 

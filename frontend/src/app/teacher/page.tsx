@@ -79,6 +79,13 @@ export default function TeacherPage() {
   const [editingFeedbackId, setEditingFeedbackId] = useState<number | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
   const [savingFeedback, setSavingFeedback] = useState(false);
+  const [feedbackSuggestions, setFeedbackSuggestions] = useState<string[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+
+  // Assignment edit state
+  const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null);
+  const [editForm, setEditForm] = useState({ title: "", subject: "", topic: "", difficulty: "medium", instructions: "", due_date: "" });
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // Form state
   const [form, setForm] = useState({
@@ -152,10 +159,48 @@ export default function TeacherPage() {
       });
       setEditingFeedbackId(null);
       setFeedbackText("");
+      setFeedbackSuggestions([]);
     } catch {
       alert("Could not save feedback. Please try again.");
     } finally {
       setSavingFeedback(false);
+    }
+  };
+
+  const handleGetFeedbackSuggestions = async (submission: Submission, assignment: Assignment) => {
+    setLoadingSuggestions(true);
+    try {
+      const data = await api.getFeedbackSuggestions({
+        topic: assignment.topic,
+        score: submission.score,
+        total: submission.total_questions,
+        student_name: submission.student_name,
+        language: user?.language || "English",
+      }) as { suggestions?: string[] };
+      setFeedbackSuggestions(data.suggestions || []);
+    } catch {
+      setFeedbackSuggestions([]);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  };
+
+  const handleEditAssignment = (a: Assignment) => {
+    setEditingAssignment(a);
+    setEditForm({ title: a.title, subject: a.subject, topic: a.topic, difficulty: a.difficulty, instructions: a.instructions || "", due_date: a.due_date || "" });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingAssignment) return;
+    setSavingEdit(true);
+    try {
+      await api.updateAssignment(editingAssignment.id, editForm);
+      setAssignments(prev => prev.map(a => a.id === editingAssignment.id ? { ...a, ...editForm } : a));
+      setEditingAssignment(null);
+    } catch {
+      alert("Could not update assignment.");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -294,6 +339,72 @@ export default function TeacherPage() {
               </button>
             </div>
           </div>
+
+          {/* ── Edit Assignment Modal ─────────────────────────────── */}
+          <AnimatePresence>
+            {editingAssignment && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
+                onClick={(e) => { if (e.target === e.currentTarget) setEditingAssignment(null); }}
+              >
+                <motion.div
+                  initial={{ scale: 0.95, y: 16, opacity: 0 }}
+                  animate={{ scale: 1, y: 0, opacity: 1 }}
+                  exit={{ scale: 0.95, y: 16, opacity: 0 }}
+                  className="card"
+                  style={{ width: "100%", maxWidth: 540, padding: 28, boxShadow: "var(--shadow-lg)" }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                    <h2 style={{ fontSize: 17, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>Edit Assignment</h2>
+                    <button onClick={() => setEditingAssignment(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}>
+                      <X size={18} />
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Title *</label>
+                      <input className="input" value={editForm.title} onChange={(e) => setEditForm(f => ({ ...f, title: e.target.value }))} placeholder="Assignment title" />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Subject</label>
+                        <input className="input" value={editForm.subject} onChange={(e) => setEditForm(f => ({ ...f, subject: e.target.value }))} placeholder="Subject" />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Topic</label>
+                        <input className="input" value={editForm.topic} onChange={(e) => setEditForm(f => ({ ...f, topic: e.target.value }))} placeholder="Topic" />
+                      </div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Difficulty</label>
+                        <select className="input" value={editForm.difficulty} onChange={(e) => setEditForm(f => ({ ...f, difficulty: e.target.value }))}>
+                          {DIFFICULTIES.map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Due Date</label>
+                        <input className="input" type="date" value={editForm.due_date} onChange={(e) => setEditForm(f => ({ ...f, due_date: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Instructions</label>
+                      <textarea className="input" rows={3} value={editForm.instructions} onChange={(e) => setEditForm(f => ({ ...f, instructions: e.target.value }))} placeholder="Instructions for students…" style={{ resize: "vertical" }} />
+                    </div>
+                    <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setEditingAssignment(null)}>Cancel</button>
+                      <button className="btn btn-primary btn-sm" onClick={() => void handleSaveEdit()} disabled={savingEdit}>
+                        {savingEdit ? "Saving…" : <><Check size={13} /> Save Changes</>}
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Stat row */}
           {/* Class Analytics Panel */}
@@ -511,6 +622,14 @@ export default function TeacherPage() {
                         </button>
                         <button
                           className="btn btn-secondary btn-sm"
+                          onClick={() => handleEditAssignment(a)}
+                          title="Edit assignment"
+                          style={{ fontSize: 12 }}
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                        <button
+                          className="btn btn-secondary btn-sm"
                           onClick={() => void handleDelete(a.id)}
                           disabled={deletingId === a.id}
                           style={{ color: "#dc2626", borderColor: "#fecaca" }}
@@ -572,30 +691,52 @@ export default function TeacherPage() {
                                       </td>
                                       <td>
                                         {editingFeedbackId === s.id ? (
-                                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                            <input
-                                              className="input"
-                                              style={{ padding: "4px 8px", fontSize: 12, minWidth: 140, margin: 0 }}
-                                              placeholder="Leave a helpful note..."
-                                              value={feedbackText}
-                                              onChange={(e) => setFeedbackText(e.target.value)}
-                                              autoFocus
-                                            />
-                                            <button
-                                              className="btn btn-primary btn-sm"
-                                              style={{ padding: "4px 8px", fontSize: 11, height: "auto" }}
-                                              onClick={() => void handleSaveFeedback(s.id, a.id)}
-                                              disabled={savingFeedback}
-                                            >
-                                              Save
-                                            </button>
-                                            <button
-                                              className="btn btn-secondary btn-sm"
-                                              style={{ padding: "4px 8px", fontSize: 11, height: "auto" }}
-                                              onClick={() => setEditingFeedbackId(null)}
-                                            >
-                                              Cancel
-                                            </button>
+                                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                              <input
+                                                className="input"
+                                                style={{ padding: "4px 8px", fontSize: 12, minWidth: 140, margin: 0 }}
+                                                placeholder="Leave a helpful note..."
+                                                value={feedbackText}
+                                                onChange={(e) => setFeedbackText(e.target.value)}
+                                                autoFocus
+                                              />
+                                              <button
+                                                className="btn btn-primary btn-sm"
+                                                style={{ padding: "4px 8px", fontSize: 11, height: "auto" }}
+                                                onClick={() => void handleSaveFeedback(s.id, a.id)}
+                                                disabled={savingFeedback}
+                                              >
+                                                Save
+                                              </button>
+                                              <button
+                                                className="btn btn-secondary btn-sm"
+                                                style={{ padding: "4px 8px", fontSize: 11, height: "auto" }}
+                                                onClick={() => { setEditingFeedbackId(null); setFeedbackSuggestions([]); }}
+                                              >
+                                                Cancel
+                                              </button>
+                                            </div>
+                                            <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+                                              <button
+                                                className="btn btn-secondary btn-sm"
+                                                style={{ fontSize: 10, padding: "2px 6px", height: "auto", opacity: loadingSuggestions ? 0.6 : 1 }}
+                                                onClick={() => void handleGetFeedbackSuggestions(s, a)}
+                                                disabled={loadingSuggestions}
+                                              >
+                                                ✨ {loadingSuggestions ? "Getting AI suggestions…" : "AI Suggestions"}
+                                              </button>
+                                              {feedbackSuggestions.map((sug, i) => (
+                                                <button
+                                                  key={i}
+                                                  onClick={() => setFeedbackText(sug)}
+                                                  style={{ fontSize: 10, padding: "2px 8px", height: "auto", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 99, cursor: "pointer", color: "#065f46", fontFamily: "Inter,sans-serif", textAlign: "left", maxWidth: 200, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                                                  title={sug}
+                                                >
+                                                  {sug.length > 40 ? sug.substring(0, 37) + "…" : sug}
+                                                </button>
+                                              ))}
+                                            </div>
                                           </div>
                                         ) : (
                                           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { useUser } from "@/lib/user-context";
+import { api } from "@/lib/api";
 import { Play, Pause, RotateCcw, Coffee, CheckCircle, Zap, BookOpen, MessageCircle, Bell } from "lucide-react";
 
 const MODES = [
@@ -84,6 +85,14 @@ function FocusTimerPageContent() {
               setCompleted((c) => c + 1);
               setShowCelebrate(true);
               setTimeout(() => setShowCelebrate(false), 3500);
+              // Log session to backend for study time analytics
+              if (user?.user_id) {
+                api.logSessionEnd({
+                  user_id: user.user_id,
+                  module: studyTopic ? `focus:${studyTopic}` : "focus_timer",
+                  duration_seconds: MODES[0].minutes * 60,
+                }).catch(() => {}); // silent — don't break the timer
+              }
               // Browser notification
               if (notifGranted) {
                 new Notification("🎉 Focus Session Complete!", {
