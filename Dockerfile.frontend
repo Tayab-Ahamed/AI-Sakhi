@@ -1,5 +1,7 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL NEXT_TELEMETRY_DISABLED=1
 COPY package*.json ./
 RUN npm ci
 COPY . .
@@ -7,9 +9,11 @@ RUN npm run build
 
 FROM node:20-alpine AS runner
 WORKDIR /app
-ENV NODE_ENV=production
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
+RUN addgroup -S -g 10001 sakhi && adduser -S -u 10001 -G sakhi sakhi
+COPY --from=builder --chown=sakhi:sakhi /app/.next/standalone ./
+COPY --from=builder --chown=sakhi:sakhi /app/.next/static ./.next/static
+COPY --from=builder --chown=sakhi:sakhi /app/public ./public
+USER sakhi
 EXPOSE 3000
 CMD ["node", "server.js"]

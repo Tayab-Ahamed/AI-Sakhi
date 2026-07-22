@@ -1,38 +1,51 @@
-version: "3.9"
-
 services:
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     volumes:
-      - ./data:/app/data          # SQLite database persisted here
-      - ./curriculum:/app/curriculum
+      - sakhi_data:/app/data
+      - sakhi_chroma:/app/chroma_db
+      - sakhi_backups:/app/backups
     environment:
-      - GROQ_API_KEY=${GROQ_API_KEY}
-      - DB_PATH=/app/data/sakhi.db
-      - SAKHI_ENV=production
+      GROQ_API_KEY: ${GROQ_API_KEY:?GROQ_API_KEY is required}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      SAKHI_JWT_SECRET: ${SAKHI_JWT_SECRET:?SAKHI_JWT_SECRET is required}
+      SAKHI_ENV: production
+      SAKHI_ENABLE_DEMO_SEED: "false"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS is required}
+      DB_PATH: /app/data/sakhi.db
+      CHROMA_PATH: /app/chroma_db
+      RAG_MAX_DISTANCE: ${RAG_MAX_DISTANCE:-0.72}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
     restart: unless-stopped
+    stop_grace_period: 30s
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/ready"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
+      start_period: 30s
       retries: 3
 
   frontend:
     build:
       context: ./frontend
       dockerfile: ../Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
     ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 20s
 
 volumes:
-  data:
+  sakhi_data:
+  sakhi_chroma:
+  sakhi_backups:

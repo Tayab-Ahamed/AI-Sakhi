@@ -213,9 +213,51 @@ def init_db():
             attempt_key TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0,
             window_started_at TEXT NOT NULL, blocked_until TEXT
         );
+        CREATE TABLE IF NOT EXISTS misconceptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, topic TEXT NOT NULL,
+            misconception_type TEXT NOT NULL, evidence TEXT, occurrence_count INTEGER DEFAULT 1,
+            last_seen_at TEXT NOT NULL, resolved_at TEXT,
+            UNIQUE(user_id, topic, misconception_type),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS mastery_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, topic TEXT NOT NULL,
+            score REAL NOT NULL, confidence TEXT NOT NULL, evidence_count INTEGER NOT NULL,
+            components_json TEXT, created_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS question_bank (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, organization_id INTEGER NOT NULL, created_by INTEGER NOT NULL,
+            board TEXT DEFAULT 'CBSE', class_level TEXT NOT NULL, subject TEXT NOT NULL, chapter TEXT,
+            learning_outcome TEXT, question_type TEXT NOT NULL, difficulty TEXT NOT NULL,
+            question_text TEXT NOT NULL, options_json TEXT, correct_answer TEXT NOT NULL,
+            explanation TEXT, misconception_tag TEXT, status TEXT DEFAULT 'draft',
+            reviewed_by INTEGER, reviewed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS privacy_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, request_type TEXT NOT NULL,
+            status TEXT DEFAULT 'pending', created_at TEXT NOT NULL, completed_at TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS safety_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, category TEXT NOT NULL,
+            severity TEXT NOT NULL, minimal_context TEXT, status TEXT DEFAULT 'open', created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS guardian_digests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, child_id INTEGER NOT NULL, parent_id INTEGER NOT NULL,
+            period_start TEXT NOT NULL, period_end TEXT NOT NULL, digest_json TEXT NOT NULL, created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS ai_evaluations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, suite_name TEXT NOT NULL, model TEXT,
+            prompt_version TEXT, score REAL NOT NULL, results_json TEXT NOT NULL, created_at TEXT NOT NULL
+        );
         CREATE INDEX IF NOT EXISTS idx_goals_user_status ON learning_goals(user_id,status,updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_feedback_user_time ON answer_feedback(user_id,created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_audit_org_time ON audit_log(organization_id,created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_misconceptions_user_topic ON misconceptions(user_id,topic,last_seen_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_mastery_user_topic ON mastery_snapshots(user_id,topic,created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_questions_org_status ON question_bank(organization_id,status,updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_privacy_user_status ON privacy_requests(user_id,status,created_at DESC);
     """)
     conn.commit()
     conn.close()

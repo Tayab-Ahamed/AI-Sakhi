@@ -52,10 +52,14 @@ from backend.quiz import evaluate_answer, generate_quiz
 from backend.rag import get_rag_catalog, get_rag_stats
 from backend.study_notes import generate_study_notes
 from backend.study_plan import generate_study_plan
+from backend.observability import configure_logging, init_error_monitoring, request_logging_middleware, validate_production_config
 
-app = FastAPI(title="AI Sakhi API", version="1.5.0")
+configure_logging()
+init_error_monitoring()
+app = FastAPI(title="AI Sakhi API", version="2.0.0")
 
 from backend.security import security_middleware
+app.middleware("http")(request_logging_middleware)
 app.middleware("http")(security_middleware)
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
@@ -105,6 +109,9 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     import os
+    errors = validate_production_config()
+    if errors:
+        raise RuntimeError("Production configuration invalid: " + "; ".join(errors))
     init_db()
     ensure_default_organization()
     secret = os.environ.get("SAKHI_JWT_SECRET", "sakhi-dev-secret-change-in-production")
@@ -1217,8 +1224,14 @@ Return ONLY a JSON array of 3 strings. Language: {req.language}"""
 
 from backend.extensions import router as extension_router
 from backend.production_features import router as production_router
+from backend.adaptive_routes import router as adaptive_router
+from backend.teacher_review_routes import router as teacher_review_router
+from backend.privacy_safety_routes import router as privacy_safety_router
 app.include_router(extension_router)
 app.include_router(production_router)
+app.include_router(adaptive_router)
+app.include_router(teacher_review_router)
+app.include_router(privacy_safety_router)
 
 if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)

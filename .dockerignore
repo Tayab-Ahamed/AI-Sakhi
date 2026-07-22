@@ -1,0 +1,12 @@
+.git
+.env
+**/__pycache__
+**/*.pyc
+**/node_modules
+**/.next
+**/.pytest_cache
+*.db
+*.sqlite*
+backups
+chroma_db
+rag_data

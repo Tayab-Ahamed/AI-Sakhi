@@ -16,4 +16,5 @@ bcrypt>=4.2,<5
 slowapi>=0.1.9,<1
 PyJWT>=2.9,<3
 python-multipart>=0.0.18,<1
+sentry-sdk[fastapi]>=2,<3
 pytest>=8,<9

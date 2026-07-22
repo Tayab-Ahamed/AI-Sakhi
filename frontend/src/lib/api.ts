@@ -309,6 +309,30 @@ export const api = {
   deleteGoal: (goalId: number, userId: number) =>
     apiFetch(`/goals/${goalId}?user_id=${encodeURIComponent(String(userId))}`, { method: "DELETE" }),
 
+  // ── Adaptive Learning ─────────────────────────────────────────────────────
+  getSmartSprint: (userId: number, minutes = 25) =>
+    apiFetch(`/v2/sprint/${userId}?minutes=${minutes}`),
+  getMastery: (userId: number) => apiFetch(`/v2/mastery/${userId}`),
+  getMisconceptions: (userId: number) => apiFetch(`/v2/misconceptions/${userId}`),
+  recordMisconception: (data: { user_id: number; topic: string; question: string; answer: string; expected: string; explanation?: string }) =>
+    apiFetch("/v2/misconceptions", { method: "POST", body: JSON.stringify(data) }),
+
+  // ── Teacher Question Bank ─────────────────────────────────────────────────
+  getQuestions: (status?: string, subject?: string) =>
+    apiFetch(`/v2/questions?${new URLSearchParams({ ...(status ? { status } : {}), ...(subject ? { subject } : {}) })}`),
+  createQuestion: (data: Record<string, unknown>) =>
+    apiFetch("/v2/questions", { method: "POST", body: JSON.stringify(data) }),
+  reviewQuestion: (questionId: number, status: "approved" | "rejected" | "draft", note = "") =>
+    apiFetch(`/v2/questions/${questionId}/review`, { method: "PUT", body: JSON.stringify({ status, note }) }),
+
+  // ── Privacy, Guardians and Safety ─────────────────────────────────────────
+  exportMyData: (userId: number) => apiFetch(`/v2/privacy/export/${userId}`),
+  requestPrivacyAction: (userId: number, requestType: "export" | "delete_account" | "delete_chat_history" | "restrict_processing") =>
+    apiFetch("/v2/privacy/requests", { method: "POST", body: JSON.stringify({ user_id: userId, request_type: requestType }) }),
+  getGuardianDigest: (childId: number) => apiFetch(`/v2/guardian/digest/${childId}`),
+  reportSafetyEvent: (data: { user_id?: number; category: string; severity: string; minimal_context?: string }) =>
+    apiFetch("/v2/safety/events", { method: "POST", body: JSON.stringify(data) }),
+
   // ── Quality Feedback ──────────────────────────────────────────────────────
   rateAnswer: (data: { user_id: number; session_id: string; rating: number; reason?: string }) =>
     apiFetch("/feedback/answer", { method: "POST", body: JSON.stringify(data) }),

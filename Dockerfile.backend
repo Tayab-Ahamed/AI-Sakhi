@@ -1,23 +1,16 @@
-FROM python:3.11-slim
+FROM python:3.11-slim AS runtime
 
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
-COPY requirements.txt .
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 sakhi && useradd --uid 10001 --gid sakhi --shell /usr/sbin/nologin sakhi
+COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application
 COPY backend/ ./backend/
 COPY curriculum/ ./curriculum/
-
-# Create data directory for SQLite
-RUN mkdir -p /app/data
-
+COPY scripts/ ./scripts/
+RUN mkdir -p /app/data /app/chroma_db /app/backups && chown -R sakhi:sakhi /app
+USER sakhi
 EXPOSE 8000
-
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD curl -fsS http://localhost:8000/ready || exit 1
+CMD ["sh", "-c", "python scripts/preflight.py && exec uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-2} --proxy-headers --forwarded-allow-ips='*'"]
