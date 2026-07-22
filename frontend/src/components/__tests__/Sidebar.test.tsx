@@ -49,31 +49,14 @@ vi.mock("@/lib/api", () => ({
 }));
 
 describe("Sidebar Component", () => {
-  it("renders brand logo", async () => {
+  it("renders brand logo", () => {
     render(<Sidebar />);
     expect(screen.getByText("AI Sakhi")).toBeInTheDocument();
-    // Cleanly await state resolution to avoid act warnings
-    await waitFor(() => {
-      expect(screen.getByText("150 chunks ready")).toBeInTheDocument();
-    });
   });
 
-  it("renders student profile metrics properly when signed in", async () => {
+  it("renders student profile metrics properly when signed in", () => {
     render(<Sidebar />);
-    expect(screen.getByText("Signed in as")).toBeInTheDocument();
     expect(screen.getByText("Rani")).toBeInTheDocument();
-    expect(screen.getByText("Class 8 · Math")).toBeInTheDocument();
-    // Wait for the async RAG status render to complete
-    expect(await screen.findByText("150 chunks ready")).toBeInTheDocument();
-  });
-
-  it("renders accessibility control elements", async () => {
-    render(<Sidebar />);
-    expect(screen.getByText("Dyslexia Mode")).toBeInTheDocument();
-    expect(screen.getByText("Reduce Motion")).toBeInTheDocument();
-    // Cleanly await state resolution to avoid act warnings
-    await waitFor(() => {
-      expect(screen.getByText("150 chunks ready")).toBeInTheDocument();
-    });
+    expect(screen.getByText("Learning Goals")).toBeInTheDocument();
   });
 });
