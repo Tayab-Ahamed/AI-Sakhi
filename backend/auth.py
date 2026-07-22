@@ -7,6 +7,7 @@ a DB round-trip, but we ALSO store it in the DB so we can revoke it.
 from __future__ import annotations
 
 import os
+import secrets
 from datetime import UTC, datetime, timedelta
 
 import jwt
@@ -47,6 +48,7 @@ def issue_session_token(user_id: int, expires_in_hours: int = 24) -> dict:
         "org": user.get("organization_id"),
         "exp": expires_at,
         "iat": datetime.now(UTC),
+        "jti": secrets.token_urlsafe(24),
     }
     token = jwt.encode(payload, _SECRET, algorithm=_ALGORITHM)
 
@@ -93,11 +95,12 @@ def verify_session_token(token: str) -> dict | None:
     conn = get_connection()
     cur = conn.cursor()
     row = cur.execute(
-        "SELECT revoked_at FROM auth_tokens WHERE token_id = ?", (token,)
+        """SELECT t.revoked_at, u.is_active FROM auth_tokens t
+           JOIN users u ON u.id=t.user_id WHERE t.token_id = ?""", (token,)
     ).fetchone()
     conn.close()
 
-    if row and row["revoked_at"]:
+    if not row or row["revoked_at"] or row["is_active"] == 0:
         return None
 
     return payload
@@ -114,3 +117,37 @@ def logout_session_token(token: str):
     )
     conn.commit()
     conn.close()
+
+
+
+def _attempt_key(name: str, ip: str) -> str:
+    import hashlib
+    return hashlib.sha256(f"{name.strip().lower()}|{ip}".encode()).hexdigest()
+
+
+def check_login_allowed(name: str, ip: str) -> bool:
+    key = _attempt_key(name, ip)
+    now = datetime.now(UTC)
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM login_attempts WHERE attempt_key=?", (key,)).fetchone()
+    conn.close()
+    if not row:
+        return True
+    if row["blocked_until"] and datetime.fromisoformat(row["blocked_until"]) > now:
+        return False
+    return True
+
+
+def record_login_failure(name: str, ip: str):
+    key = _attempt_key(name, ip); now = datetime.now(UTC); window = now - timedelta(minutes=15)
+    conn = get_connection(); row = conn.execute("SELECT * FROM login_attempts WHERE attempt_key=?", (key,)).fetchone()
+    attempts = 1
+    if row and datetime.fromisoformat(row["window_started_at"]) >= window:
+        attempts = row["attempts"] + 1
+    blocked = (now + timedelta(minutes=15)).replace(microsecond=0).isoformat() if attempts >= 5 else None
+    conn.execute("INSERT INTO login_attempts(attempt_key,attempts,window_started_at,blocked_until) VALUES(?,?,?,?) ON CONFLICT(attempt_key) DO UPDATE SET attempts=excluded.attempts,window_started_at=excluded.window_started_at,blocked_until=excluded.blocked_until", (key, attempts, now.replace(microsecond=0).isoformat(), blocked))
+    conn.commit(); conn.close()
+
+
+def clear_login_failures(name: str, ip: str):
+    conn = get_connection(); conn.execute("DELETE FROM login_attempts WHERE attempt_key=?", (_attempt_key(name, ip),)); conn.commit(); conn.close()

@@ -670,7 +670,7 @@ export default function ChatPage() {
   const visibleVoices = filteredVoices.length ? filteredVoices : voices;
   const filteredChapters = catalog.chapters.filter((chapter) => {
     if (!ragFilters.subject) return true;
-    return chapter.label.toLowerCase().includes(ragFilters.subject.toLowerCase()) || true;
+    return chapter.label.toLowerCase().includes(ragFilters.subject.toLowerCase());
   });
 
   	// Main layout — section must be flex col with overflow hidden so the scroll area works

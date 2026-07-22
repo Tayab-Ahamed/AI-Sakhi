@@ -112,6 +112,8 @@ export const api = {
 
   getUser: (userId: number) => apiFetch(`/user/${userId}`),
 
+  listUsers: (organizationId?: number) => apiFetch(`/users${organizationId ? `?organization_id=${organizationId}` : ""}`),
+
   updateUser: (userId: number, data: { name: string; class_: string; language: string; weak_subject: string; role?: string; organization_id?: number }) =>
     apiFetch(`/user/${userId}`, { method: "PUT", body: JSON.stringify(data) }),
 
@@ -233,7 +235,7 @@ export const api = {
     return apiFetch(`/assignments?${q.toString()}`);
   },
 
-  getAssignment: (id: number) => apiFetch(`/assignments/${id}`),
+  getAssignment: (id: number) => apiFetch(`/assignments/detail/${id}`),
 
   deleteAssignment: (id: number, teacherId: number) =>
     apiFetch(`/assignments/${id}?teacher_id=${teacherId}`, { method: "DELETE" }),
@@ -297,6 +299,19 @@ export const api = {
     apiFetch("/organizations/join", { method: "POST", body: JSON.stringify({ user_id: userId, join_code: joinCode }) }),
   generateJoinCode: (orgId: number) =>
     apiFetch(`/organizations/${orgId}/generate-code`, { method: "POST" }),
+
+  // ── Learning Goals ────────────────────────────────────────────────────────
+  getGoals: (userId: number) => apiFetch(`/goals/${userId}`),
+  createGoal: (data: { user_id: number; title: string; target_minutes: number; target_date?: string }) =>
+    apiFetch("/goals", { method: "POST", body: JSON.stringify(data) }),
+  checkinGoal: (goalId: number, data: { user_id: number; minutes: number; note?: string }) =>
+    apiFetch(`/goals/${goalId}/checkin`, { method: "POST", body: JSON.stringify(data) }),
+  deleteGoal: (goalId: number, userId: number) =>
+    apiFetch(`/goals/${goalId}?user_id=${encodeURIComponent(String(userId))}`, { method: "DELETE" }),
+
+  // ── Quality Feedback ──────────────────────────────────────────────────────
+  rateAnswer: (data: { user_id: number; session_id: string; rating: number; reason?: string }) =>
+    apiFetch("/feedback/answer", { method: "POST", body: JSON.stringify(data) }),
 };
 
 // ── Streaming Chat via SSE ────────────────────────────────────────────────────

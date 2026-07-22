@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   MessageSquare, Zap, LayoutDashboard, BookOpen, Plus, LogOut, Globe,
   Timer, Trophy, Layers3, GraduationCap, Users, Shield, FileText,
-  FileDown, Moon, Sun, User, BarChart2, ClipboardList, Settings,
+  FileDown, Moon, Sun, User, BarChart2, ClipboardList, Settings, Target,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -21,6 +21,7 @@ const STUDENT_NAV = [
   { href: "/chat",           icon: MessageSquare,  label: "Chat with Sakhi" },
   { href: "/quiz",           icon: Zap,            label: "Quiz Practice"   },
   { href: "/dashboard",      icon: LayoutDashboard, label: "My Dashboard"   },
+  { href: "/goals",          icon: Target,          label: "Learning Goals"  },
   { href: "/mastery",        icon: BarChart2,      label: "Topic Mastery"   },
   { href: "/leaderboard",    icon: Trophy,         label: "Leaderboard"     },
   { href: "/study-plan",     icon: BookOpen,       label: "Study Plan"      },

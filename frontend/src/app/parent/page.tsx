@@ -54,15 +54,24 @@ export default function ParentPage() {
 
   useEffect(() => {
     if (!user?.organization_id || !["parent", "admin"].includes(user.role || "")) return;
-    // Load all students in the organization
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/users?organization_id=${user.organization_id}`)
-      .then((r) => r.json())
+    const request = user.role === "admin" ? api.listUsers(user.organization_id) : api.getChildren(user.user_id);
+    request
       .then((data) => {
-        const students = (data.users || []).filter((u: { role: string }) => u.role === "student");
-        setChildren(students);
-        if (students.length > 0) setSelectedChild(students[0].id);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const res = data as any;
+        const raw: any[] = user.role === "admin" ? (res?.users || []) : (res?.children || []);
+        const students = raw.filter((u: { role?: string }) => !u.role || u.role === "student");
+        const normalized = students
+          .map((u: { id?: number; user_id?: number; name: string; class_?: string; class?: string }) => ({
+            ...u,
+            id: u.id || u.user_id || 0,
+            class_: u.class_ || u.class || "",
+          }))
+          .filter((s) => s.id > 0);
+        setChildren(normalized);
+        if (normalized.length > 0) setSelectedChild(normalized[0].id);
       })
-      .catch(() => {});
+      .catch(() => { setChildren([]); setSelectedChild(null); });
   }, [user?.organization_id, user?.role]);
 
   useEffect(() => {

@@ -9,13 +9,14 @@ import re
 from typing import List, Optional
 
 import uvicorn
-from fastapi import Depends, FastAPI, File, HTTPException, Security, UploadFile, Cookie, Response
+from fastapi import Depends, FastAPI, File, HTTPException, Security, UploadFile, Cookie, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from fastapi.responses import StreamingResponse
 
 from backend.auth import issue_session_token, logout_session_token, verify_session_token
@@ -52,11 +53,15 @@ from backend.rag import get_rag_catalog, get_rag_stats
 from backend.study_notes import generate_study_notes
 from backend.study_plan import generate_study_plan
 
-app = FastAPI(title="AI Sakhi API", version="1.4.0")
+app = FastAPI(title="AI Sakhi API", version="1.5.0")
+
+from backend.security import security_middleware
+app.middleware("http")(security_middleware)
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -104,7 +109,9 @@ async def startup():
     ensure_default_organization()
     secret = os.environ.get("SAKHI_JWT_SECRET", "sakhi-dev-secret-change-in-production")
     if secret == "sakhi-dev-secret-change-in-production":
-        print("[WARNING] SAKHI_JWT_SECRET is not set — using insecure default. Set this env var before deploying!")
+        if os.getenv("SAKHI_ENV") == "production":
+            raise RuntimeError("SAKHI_JWT_SECRET must be set to a strong unique value in production")
+        print("[WARNING] SAKHI_JWT_SECRET is not set — using insecure development default")
     print("[OK] AI Sakhi backend started. DB initialized.")
 
 
@@ -113,9 +120,9 @@ class UserCreate(BaseModel):
     class_: str
     language: str = "English"
     weak_subject: str = ""
-    role: str = "student"
+    role: str = "student"  # public registration is always normalized to student
     organization_id: Optional[int] = None
-    password: Optional[str] = None
+    password: str = Field(min_length=8, max_length=128)
 
 
 class UserUpdate(BaseModel):
@@ -187,11 +194,11 @@ class ProgressUpdate(BaseModel):
 
 class TokenRequest(BaseModel):
     user_id: int
-    expires_in_hours: int = 24
+    expires_in_hours: int = Field(default=24, ge=1, le=24)
 
 
 class TokenVerifyRequest(BaseModel):
-    token: str
+    token: str = ""
 
 
 class LoginRequest(BaseModel):
@@ -230,7 +237,8 @@ def api_issue_token(req: TokenRequest, response: Response):
         value=token["token"],
         httponly=True,
         samesite="lax",
-        max_age=req.expires_in_hours * 3600
+        secure=os.getenv("SAKHI_ENV") == "production",
+        max_age=min(req.expires_in_hours, 24) * 3600
     )
     return token
 
@@ -254,26 +262,30 @@ def api_logout(req: TokenVerifyRequest, response: Response, sakhi_token: Optiona
 
 @app.post("/user/create")
 def api_create_user(req: UserCreate, response: Response):
-    user_id = create_user(
-        req.name,
-        req.class_,
-        normalize_language(req.language),
-        req.weak_subject,
-        role=req.role,
-        organization_id=req.organization_id,
-    )
+    try:
+        user_id = create_user(
+            req.name,
+            req.class_,
+            normalize_language(req.language),
+            req.weak_subject,
+            role="student",
+            organization_id=None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     if req.password:
         from backend.auth import hash_password
         from backend.db import set_user_password
         set_user_password(user_id, hash_password(req.password))
     user = get_user_with_org(user_id)
-    log_event("user_created", user_id=user_id, metadata={"language": normalize_language(req.language), "class_": req.class_, "role": req.role})
+    log_event("user_created", user_id=user_id, metadata={"language": normalize_language(req.language), "class_": req.class_, "role": "student"})
     token = issue_session_token(user_id)
     response.set_cookie(
         key="sakhi_token",
         value=token["token"],
         httponly=True,
         samesite="lax",
+        secure=os.getenv("SAKHI_ENV") == "production",
         max_age=24 * 3600
     )
     return {"user_id": user_id, "message": f"Welcome, {req.name}!", "auth": token, **(user or {})}
@@ -340,6 +352,9 @@ def api_update_user_plural(user_id: int, body: dict):
 
 @app.post("/chat")
 def api_chat(req: ChatRequest):
+    existing = get_chat_history(req.session_id)
+    if existing and existing.get("user_id") and existing["user_id"] != req.user_id:
+        raise HTTPException(status_code=403, detail="Chat session access denied")
     response = chat(
         req.session_id,
         req.message,
@@ -367,7 +382,10 @@ async def api_chat_upload(
     import base64
 
     client_g = _Groq(api_key=os.getenv("GROQ_API_KEY", ""))
-    content = await file.read()
+    max_upload = 10 * 1024 * 1024
+    content = await file.read(max_upload + 1)
+    if len(content) > max_upload:
+        raise HTTPException(status_code=413, detail="File exceeds the 10 MB limit")
     fname = file.filename or "document"
     ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
 
@@ -387,12 +405,17 @@ async def api_chat_upload(
                 max_tokens=1200,
             )
             response_text = resp.choices[0].message.content
+        elif ext == "pdf":
+            from io import BytesIO
+            from pypdf import PdfReader
+            reader = PdfReader(BytesIO(content))
+            if len(reader.pages) > 50:
+                raise HTTPException(status_code=413, detail="PDF exceeds the 50-page limit")
+            text = "\n".join((page.extract_text() or "") for page in reader.pages)
+        elif ext in ("txt", "md"):
+            text = content.decode("utf-8", errors="strict")
         else:
-            # PDF or unknown: try to read as text
-            try:
-                text = content.decode("utf-8", errors="ignore")
-            except Exception:
-                text = re.sub(rb"[^\x20-\x7E\n]", b" ", content).decode("ascii", errors="ignore")
+            raise HTTPException(status_code=415, detail="Supported uploads: PDF, TXT, MD, PNG, JPG, WEBP")
             # Trim to reasonable size
             text = text[:6000]
             prompt = (
@@ -411,20 +434,27 @@ async def api_chat_upload(
         if user_id:
             log_event("file_uploaded", user_id=user_id, metadata={"filename": fname, "ext": ext})
         return {"response": response_text, "filename": fname}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Unable to process the uploaded file")
 
 
 @app.post("/chat/clear")
-def api_clear_chat(session_id: str):
+def api_clear_chat(session_id: str, request: Request):
+    history = get_chat_history(session_id)
+    if history and history.get("user_id") and history["user_id"] != int(request.state.auth["sub"]) and request.state.auth.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Chat session access denied")
     clear_session(session_id)
     return {"message": "Session cleared"}
 
 
 @app.get("/chat/history/{session_id}")
-def api_chat_history(session_id: str):
+def api_chat_history(session_id: str, request: Request):
     """Return chat history for a session. Returns empty messages for new/unknown sessions (never 404)."""
     history = get_chat_history(session_id)
+    if history and history.get("user_id") and history["user_id"] != int(request.state.auth["sub"]) and request.state.auth.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Chat session access denied")
     if not history:
         # New session — return empty message list so frontend can start fresh
         return {"session_id": session_id, "messages": [], "profile": {}}
@@ -508,7 +538,7 @@ def api_generate_study_notes(req: StudyNotesRequest):
             subject=req.subject,
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Internal server error")
     if req.user_id:
         log_event("study_notes_generated", user_id=req.user_id, metadata={"topic": req.topic, "language": normalize_language(req.language)})
     return {"notes_md": notes_md, "topic": req.topic}
@@ -542,24 +572,26 @@ def api_dashboard(organization_id: Optional[int] = None):
 
 
 @app.post("/auth/login")
-def api_login(req: LoginRequest, response: Response):
+def api_login(req: LoginRequest, response: Response, request: Request):
     """Login with name + password. Returns JWT cookie."""
     from backend.db import get_user_by_name, get_user_password_hash
-    from backend.auth import verify_password
+    from backend.auth import verify_password, check_login_allowed, record_login_failure, clear_login_failures
+    ip = request.client.host if request.client else "unknown"
+    if not check_login_allowed(req.name, ip):
+        raise HTTPException(status_code=429, detail="Too many login attempts. Try again later")
     user = get_user_by_name(req.name)
-    if not user:
+    stored_hash = get_user_password_hash(user["user_id"]) if user else None
+    if not user or not stored_hash or not verify_password(req.password, stored_hash):
+        record_login_failure(req.name, ip)
         raise HTTPException(status_code=401, detail="Invalid name or password")
-    stored_hash = get_user_password_hash(user["user_id"])
-    if not stored_hash:
-        raise HTTPException(status_code=401, detail="This account has no password set. Please re-register.")
-    if not verify_password(req.password, stored_hash):
-        raise HTTPException(status_code=401, detail="Invalid name or password")
+    clear_login_failures(req.name, ip)
     token = issue_session_token(user["user_id"])
     response.set_cookie(
         key="sakhi_token",
         value=token["token"],
         httponly=True,
         samesite="lax",
+        secure=os.getenv("SAKHI_ENV") == "production",
         max_age=24 * 3600
     )
     return {"user_id": user["user_id"], "message": f"Welcome back, {user['name']}!", "auth": token, **user}
@@ -773,7 +805,7 @@ def api_create_assignment(req: AssignmentCreateRequest):
             due_date=req.due_date,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/assignments")
 def api_list_assignments(
@@ -789,20 +821,25 @@ def api_list_assignments(
             class_=class_,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.get("/assignments/{id}")
-def api_get_assignment(id: int):
+@app.get("/assignments/detail/{id}")
+def api_get_assignment(id: int, request: Request):
     from backend.teacher_tools import get_assignment
     item = get_assignment(id)
     if not item:
         raise HTTPException(status_code=404, detail="Assignment not found")
+    if request.state.auth.get("role") != "admin" and item.get("organization_id") != request.state.auth.get("org"):
+        raise HTTPException(status_code=403, detail="Assignment access denied")
     return item
 
 @app.delete("/assignments/{id}")
-def api_delete_assignment(id: int, teacher_id: int):
-    from backend.teacher_tools import delete_assignment
-    success = delete_assignment(id, teacher_id)
+def api_delete_assignment(id: int, teacher_id: int, request: Request):
+    from backend.teacher_tools import delete_assignment, get_assignment
+    actor_id = int(request.state.auth["sub"])
+    item = get_assignment(id)
+    effective_teacher = item.get("teacher_id") if item and request.state.auth.get("role") == "admin" else actor_id
+    success = delete_assignment(id, effective_teacher)
     if not success:
         raise HTTPException(status_code=404, detail="Assignment not found or unauthorized")
     return {"ok": True}
@@ -818,7 +855,7 @@ def api_submit_assignment(assignment_id: int, req: AssignmentSubmitRequest):
             total_questions=req.total_questions,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/assignments/student/{userId}")
 def api_get_student_assignments(userId: int, organization_id: Optional[int] = None):
@@ -826,7 +863,7 @@ def api_get_student_assignments(userId: int, organization_id: Optional[int] = No
     try:
         return get_student_assignments(userId, organization_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/assignments/{assignment_id}/submissions")
 def api_get_assignment_submissions(assignment_id: int):
@@ -834,7 +871,7 @@ def api_get_assignment_submissions(assignment_id: int):
     try:
         return {"submissions": get_assignment_submissions(assignment_id)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/report/student/{userId}")
 def api_generate_student_report_data(userId: int):
@@ -842,7 +879,7 @@ def api_generate_student_report_data(userId: int):
     try:
         return generate_student_report_data(userId)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 
@@ -853,7 +890,7 @@ def api_class_analytics(org_id: int):
     try:
         return get_class_analytics(org_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/organization/roster/{org_id}")
@@ -862,7 +899,7 @@ def api_organization_roster(org_id: int):
     try:
         return {"roster": get_organization_roster(org_id)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 class FeedbackUpdateRequest(BaseModel):
@@ -878,7 +915,7 @@ def api_update_submission_feedback(submission_id: int, req: FeedbackUpdateReques
             raise HTTPException(status_code=404, detail="Submission not found")
         return res
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 class DemoSeedRequest(BaseModel):
@@ -892,6 +929,8 @@ class DemoSeedRequest(BaseModel):
 
 @app.post("/demo/seed")
 def api_seed_demo_data(req: DemoSeedRequest):
+    if os.getenv("SAKHI_ENABLE_DEMO_SEED", "false").lower() != "true":
+        raise HTTPException(status_code=404, detail="Demo seeding is disabled")
     import sqlite3
     import random
     from datetime import datetime, timedelta, UTC
@@ -975,7 +1014,7 @@ def api_seed_demo_data(req: DemoSeedRequest):
         conn.close()
         return {"ok": True, "message": f"Successfully created and seeded test {req.role} account!", "user_id": user_id}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/analytics/daily-activity/{org_id}")
@@ -1009,7 +1048,7 @@ def api_daily_activity(org_id: int):
         conn.close()
         return {"activity": activity}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 class AssignmentUpdateRequest(BaseModel):
@@ -1046,7 +1085,7 @@ def api_recommendations(user_id: int):
     try:
         return get_recommendations(user_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/quiz/recommended-difficulty/{user_id}")
@@ -1056,7 +1095,7 @@ def api_recommended_difficulty(user_id: int, topic: Optional[str] = None):
     try:
         return get_difficulty_context(user_id, topic=topic)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/leaderboard/{org_id}")
@@ -1066,23 +1105,31 @@ def api_leaderboard(org_id: int):
         board = get_leaderboard(org_id)
         return {"leaderboard": board, "total": len(board)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.put("/assignments/{assignment_id}")
-def api_update_assignment(assignment_id: int, req: AssignmentUpdateRequest):
+def api_update_assignment(assignment_id: int, req: AssignmentUpdateRequest, request: Request):
     """Teacher updates an existing assignment."""
     try:
         conn = get_connection()
-        conn.execute(
-            "UPDATE assignments SET title=?, subject=?, topic=?, difficulty=?, instructions=?, due_date=?, updated_at=? WHERE id=? AND is_active=1",
-            (req.title, req.subject, req.topic, req.difficulty, req.instructions, req.due_date, now_iso(), assignment_id),
-        )
+        if request.state.auth.get("role") == "admin":
+            result = conn.execute(
+                "UPDATE assignments SET title=?, subject=?, topic=?, difficulty=?, instructions=?, due_date=?, updated_at=? WHERE id=? AND is_active=1",
+                (req.title, req.subject, req.topic, req.difficulty, req.instructions, req.due_date, now_iso(), assignment_id),
+            )
+        else:
+            result = conn.execute(
+                "UPDATE assignments SET title=?, subject=?, topic=?, difficulty=?, instructions=?, due_date=?, updated_at=? WHERE id=? AND teacher_id=? AND is_active=1",
+                (req.title, req.subject, req.topic, req.difficulty, req.instructions, req.due_date, now_iso(), assignment_id, int(request.state.auth["sub"])),
+            )
+        if not result.rowcount:
+            raise HTTPException(status_code=404, detail="Assignment not found or unauthorized")
         conn.commit()
         conn.close()
         return {"ok": True, "message": "Assignment updated"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.delete("/users/{user_id}")
@@ -1092,7 +1139,7 @@ def api_deactivate_user(user_id: int):
         deactivate_user(user_id)
         return {"ok": True, "message": "User deactivated"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/parent/children/{parent_id}")
@@ -1101,7 +1148,7 @@ def api_get_children(parent_id: int):
     try:
         return {"children": get_children(parent_id)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/parent/link-child")
@@ -1111,7 +1158,7 @@ def api_link_child(req: LinkChildRequest):
         link_child_to_parent(req.parent_id, req.child_id)
         return {"ok": True, "message": "Child linked to parent"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/organizations/join")
@@ -1167,6 +1214,11 @@ Return ONLY a JSON array of 3 strings. Language: {req.language}"""
             "I believe in you — consistent practice will help you improve!"
         ]}
 
+
+from backend.extensions import router as extension_router
+from backend.production_features import router as production_router
+app.include_router(extension_router)
+app.include_router(production_router)
 
 if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)

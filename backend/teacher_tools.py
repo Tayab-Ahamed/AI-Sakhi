@@ -145,7 +145,7 @@ def get_student_assignments(user_id: int, organization_id: int | None = None) ->
         conn.close()
         return []
     org_id = organization_id or user["organization_id"]
-    class_ = str(user.get("class") or user.get("class_") or "8")
+    class_ = str(user["class"] or "8")
     rows = cur.execute(
         """
         SELECT a.*,
@@ -218,7 +218,7 @@ def get_assignment_submissions(assignment_id: int) -> list[dict]:
     cur = conn.cursor()
     rows = cur.execute(
         """
-        SELECT s.*, u.name as student_name, u.class_ as class_
+        SELECT s.*, u.name as student_name, u.class as class_
         FROM assignment_submissions s
         JOIN users u ON u.id = s.student_id
         WHERE s.assignment_id = ?
@@ -271,7 +271,7 @@ def generate_student_report_data(user_id: int) -> dict:
 
     # Flashcard stats
     fc_stats = cur.execute(
-        "SELECT COUNT(*) as total, AVG(easiness_factor) as avg_ef FROM flashcard_reviews WHERE user_id = ?",
+        "SELECT COUNT(*) as total, AVG(ef) as avg_ef FROM flashcard_reviews WHERE user_id = ?",
         (user_id,),
     ).fetchone()
 

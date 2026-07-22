@@ -72,18 +72,18 @@ function OnboardForm() {
 
   const submit = async () => {
     setPwError("");
-    if (form.password.length < 6) { setPwError("Password must be at least 6 characters."); return; }
+    if (form.password.length < 8) { setPwError("Password must be at least 8 characters."); return; }
     if (form.password !== form.confirmPassword) { setPwError("Passwords do not match."); return; }
     setLoading(true);
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const res = await (api as any).createUser({
         name: form.name, class_: form.class_, language: form.language,
-        weak_subject: form.weak_subject, role: form.role, password: form.password,
+        weak_subject: form.weak_subject, role: "student", password: form.password,
       }) as { user_id: number; auth?: unknown } & Record<string, unknown>;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setUser({ ...res, ...form } as any, (res.auth as any) || null);
-      router.push(getRoleLandingPage(form.role));
+      router.push(getRoleLandingPage((res.role as string) || "student"));
     } catch {
       alert("Cannot reach backend. Make sure FastAPI is running on port 8000.");
     } finally {
@@ -223,7 +223,7 @@ function OnboardForm() {
         <p style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 24 }}>You&apos;ll use this to sign in next time.</p>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ position: "relative" }}>
-            <input style={{ ...inputStyle, paddingRight: 44 }} type={showPw ? "text" : "password"} placeholder="Password (min 6 chars)"
+            <input style={{ ...inputStyle, paddingRight: 44 }} type={showPw ? "text" : "password"} placeholder="Password (min 8 chars)"
               value={form.password} onChange={(e) => { setForm(f => ({ ...f, password: e.target.value })); setPwError(""); }}
               onFocus={(e) => { e.target.style.borderColor = cfg.color; e.target.style.boxShadow = `0 0 0 3px ${cfg.color}18`; }}
               onBlur={(e) => { e.target.style.borderColor = "var(--border)"; e.target.style.boxShadow = "none"; }}

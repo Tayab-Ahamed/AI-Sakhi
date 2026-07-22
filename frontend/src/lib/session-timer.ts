@@ -21,12 +21,18 @@ export function stopTimer() {
     module: _module,
     duration_seconds: duration,
   });
-  // Use sendBeacon for reliability on page unload
-  if (navigator.sendBeacon) {
-    navigator.sendBeacon(`${BASE_URL}/analytics/session-end`, new Blob([payload], { type: "application/json" }));
-  } else {
-    fetch(`${BASE_URL}/analytics/session-end`, { method: "POST", body: payload, headers: { "Content-Type": "application/json" }, keepalive: true }).catch(() => {});
-  }
+  let token = "";
+  try { token = JSON.parse(localStorage.getItem("sakhi_auth") || "{}").token || ""; } catch { token = ""; }
+  fetch(`${BASE_URL}/analytics/session-end`, {
+    method: "POST",
+    body: payload,
+    credentials: "include",
+    keepalive: true,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  }).catch(() => {});
   _start = null;
   _userId = null;
 }

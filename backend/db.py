@@ -168,9 +168,54 @@ def init_db():
             next_review_at TEXT,
             last_reviewed_at TEXT,
             created_at TEXT DEFAULT (datetime('now')),
+            card_front TEXT,
+            card_back TEXT,
+            total_reviews INTEGER DEFAULT 0,
             UNIQUE(user_id, card_id),
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
+    """)
+    _ensure_column(cur, "chat_sessions", "title", "TEXT")
+    _ensure_column(cur, "flashcard_reviews", "card_front", "TEXT")
+    _ensure_column(cur, "flashcard_reviews", "card_back", "TEXT")
+    _ensure_column(cur, "flashcard_reviews", "total_reviews", "INTEGER DEFAULT 0")
+    cur.execute("""CREATE TABLE IF NOT EXISTS artifacts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, artifact_type TEXT NOT NULL, title TEXT NOT NULL, topic TEXT, source_session_id TEXT, payload_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)""")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_user_type ON artifacts(user_id, artifact_type, updated_at DESC)")
+    cur.executescript("""
+        CREATE TABLE IF NOT EXISTS learning_goals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+            title TEXT NOT NULL, target_minutes INTEGER NOT NULL, target_date TEXT,
+            status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS goal_checkins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, goal_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
+            minutes INTEGER NOT NULL, note TEXT, created_at TEXT NOT NULL,
+            FOREIGN KEY(goal_id) REFERENCES learning_goals(id) ON DELETE CASCADE,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS answer_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, session_id TEXT NOT NULL,
+            rating INTEGER NOT NULL, reason TEXT, created_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS role_invites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, code_hash TEXT UNIQUE NOT NULL, role TEXT NOT NULL,
+            organization_id INTEGER NOT NULL, created_by INTEGER NOT NULL, expires_at TEXT NOT NULL,
+            used_at TEXT, used_by INTEGER, created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT NOT NULL, user_id INTEGER,
+            organization_id INTEGER, method TEXT NOT NULL, path TEXT NOT NULL, status_code INTEGER NOT NULL,
+            ip_hash TEXT, created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS login_attempts (
+            attempt_key TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0,
+            window_started_at TEXT NOT NULL, blocked_until TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_goals_user_status ON learning_goals(user_id,status,updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_feedback_user_time ON answer_feedback(user_id,created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_audit_org_time ON audit_log(organization_id,created_at DESC);
     """)
     conn.commit()
     conn.close()
@@ -198,12 +243,16 @@ def create_user(name: str, class_: str, language: str, weak_subject: str, role: 
     cur = conn.cursor()
     timestamp = now_iso()
     org_id = organization_id or ensure_default_organization()
+    duplicate = cur.execute("SELECT id FROM users WHERE LOWER(name)=LOWER(?) AND COALESCE(is_active,1)=1", (name.strip(),)).fetchone()
+    if duplicate:
+        conn.close()
+        raise ValueError("An active account with this name already exists")
     cur.execute(
         """
         INSERT INTO users (organization_id, name, class, language, weak_subject, role, created_at, updated_at, last_active_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (org_id, name, class_, language, weak_subject, role, timestamp, timestamp, timestamp),
+        (org_id, name.strip(), class_, language, weak_subject, role, timestamp, timestamp, timestamp),
     )
     user_id = cur.lastrowid
     conn.commit()
@@ -604,7 +653,7 @@ def get_user_by_name(name: str) -> dict | None:
     cur = conn.cursor()
     _ensure_column(cur, "users", "password_hash", "TEXT")
     row = cur.execute(
-        "SELECT * FROM users WHERE LOWER(name) = LOWER(?)",
+        "SELECT * FROM users WHERE LOWER(name) = LOWER(?) AND COALESCE(is_active,1)=1",
         (name,),
     ).fetchone()
     conn.close()

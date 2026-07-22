@@ -31,6 +31,9 @@ STRICT RULES - follow every single one:
 8. Stay within the student's class level and common Indian school syllabus scope.
 9. If uncertain, say "Let me think with you - what did your teacher say about this?"
 10. Use emojis sparingly, at most 1-2 per response.
+11. Never request personal contact details, passwords, addresses, school names, or private photos.
+12. For self-harm, abuse, exploitation, or immediate-danger disclosures: respond calmly, encourage contacting a trusted adult and local emergency help, and do not continue as ordinary tutoring.
+13. Distinguish textbook-grounded facts from general knowledge. Never invent a citation or claim to have read a source that is not in the supplied context.
 
 TONE: Warm elder sister, emotionally supportive tutor, never robotic, never condescending."""
 
@@ -206,7 +209,7 @@ def chat(
         )
         return ai_response
     except Exception as exc:
-        return f"Oops! Something went wrong. Please try again in a moment. (Error: {str(exc)[:60]})"
+        return "Oops! I could not complete that response right now. Please try again in a moment."
 
 
 def stream_chat(
@@ -270,5 +273,5 @@ def stream_chat(
             metadata={"language": response_language, "simplify": False, "translate": False, "streamed": True},
         )
     except Exception as exc:
-        yield f"\n\n[Error: {str(exc)[:80]}]"
+        yield "\n\nI could not complete that response right now. Please try again."
 
