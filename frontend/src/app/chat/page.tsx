@@ -510,6 +510,14 @@ export default function ChatPage() {
           );
           setTyping(false);
           inFlightRef.current = false;
+        },
+        (streamedCitations) => {
+          // Textbook evidence arrives as its own SSE frame.
+          setMessages((current) =>
+            current.map((m) =>
+              m.id === aiMsgId ? { ...m, citations: streamedCitations as Citation[] } : m
+            )
+          );
         }
       );
       return; // async handled inside callbacks

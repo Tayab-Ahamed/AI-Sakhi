@@ -1,0 +1,17 @@
+line-length = 110
+target-version = "py311"
+exclude = [".venv", "frontend", "chroma_db", "data"]
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "C4", "S", "RUF"]
+ignore = [
+  "E501",   # line length is handled by the formatter
+  "B008",   # FastAPI Depends() in defaults is idiomatic
+  "S101",   # asserts are fine in tests
+  "S104",   # binding 0.0.0.0 inside a container is intentional
+]
+
+[lint.per-file-ignores]
+"backend/tests/*" = ["S", "B"]
+"tests/*" = ["S", "B"]
+"scripts/*" = ["S603", "S607"]

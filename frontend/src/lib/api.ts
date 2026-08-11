@@ -6,6 +6,8 @@ const TIMEOUT_MS = 30_000; // 30 s
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 800;
 
+// The httpOnly session cookie is the primary credential. The stored token is
+// only a fallback for older sessions and non-browser callers.
 function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
   try {
@@ -18,6 +20,33 @@ function getStoredToken(): string | null {
   }
 }
 
+export function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(new RegExp("(^|; )" + name + "=([^;]*)"));
+  return match ? decodeURIComponent(match[2]) : null;
+}
+
+// Double-submit CSRF: the backend sets a readable cookie, we echo it in a header.
+export async function ensureCsrfToken(): Promise<string | null> {
+  const existing = readCookie("sakhi_csrf");
+  if (existing) return existing;
+  try {
+    await fetch(`${BASE_URL}/auth/csrf`, { credentials: "include" });
+  } catch {
+    return null;
+  }
+  return readCookie("sakhi_csrf");
+}
+
+function authHeaders(base?: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json", ...(base || {}) };
+  const token = getStoredToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const csrf = readCookie("sakhi_csrf");
+  if (csrf) headers["X-CSRF-Token"] = csrf;
+  return headers;
+}
+
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -26,12 +55,11 @@ async function apiFetch(path: string, options: RequestInit = {}, retries = MAX_R
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-  const token = getStoredToken();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options.headers as Record<string, string> | undefined),
-  };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const method = (options.method || "GET").toUpperCase();
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    await ensureCsrfToken();
+  }
+  const headers = authHeaders(options.headers as Record<string, string> | undefined);
 
   try {
     const res = await fetch(`${BASE_URL}${path}`, {
@@ -43,8 +71,20 @@ async function apiFetch(path: string, options: RequestInit = {}, retries = MAX_R
     clearTimeout(timer);
 
     if (!res.ok) {
-      const text = await res.text().catch(() => `HTTP ${res.status}`);
-      throw new Error(text || `API error ${res.status}`);
+      if (retries > 0 && method === "GET" && [502, 503, 504].includes(res.status)) {
+        await sleep(RETRY_DELAY_MS);
+        return apiFetch(path, options, retries - 1);
+      }
+      let detail = `API error ${res.status}`;
+      const text = await res.text().catch(() => "");
+      if (text) {
+        try {
+          detail = (JSON.parse(text) as { detail?: string }).detail || text;
+        } catch {
+          detail = text;
+        }
+      }
+      throw new Error(detail);
     }
     return res.json();
   } catch (err: unknown) {
@@ -338,6 +378,29 @@ export const api = {
     apiFetch("/feedback/answer", { method: "POST", body: JSON.stringify(data) }),
 };
 
+export type Citation = {
+  index?: number;
+  label?: string;
+  source?: string;
+  page?: number | null;
+  chapter?: string | null;
+  subject?: string | null;
+  class_level?: string | null;
+  board?: string | null;
+  score?: number;
+  snippet?: string;
+  source_text?: string;
+};
+
+type StreamEvent = {
+  type: "token" | "citations" | "safety" | "error" | "done";
+  text?: string;
+  message?: string;
+  citations?: Citation[];
+  safety?: { severity?: string; categories?: string[]; blocked?: boolean };
+  grounded?: boolean;
+};
+
 // ── Streaming Chat via SSE ────────────────────────────────────────────────────
 
 export async function streamChat(
@@ -353,19 +416,11 @@ export async function streamChat(
   },
   onChunk: (chunk: string) => void,
   onDone: (fullText: string) => void,
-  onError?: (err: string) => void
+  onError?: (err: string) => void,
+  onCitations?: (citations: Citation[]) => void
 ): Promise<void> {
-  const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-  const token = (() => {
-    try {
-      const raw = localStorage.getItem("sakhi_auth");
-      if (!raw) return null;
-      return (JSON.parse(raw) as { token?: string }).token || null;
-    } catch { return null; }
-  })();
-
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  await ensureCsrfToken();
+  const headers = authHeaders();
 
   try {
     const res = await fetch(`${BASE_URL}/chat/stream`, {
@@ -392,14 +447,29 @@ export async function streamChat(
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
       for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const content = line.slice(6);
-          if (content === "[DONE]") {
-            onDone(fullText);
-            return;
-          }
+        if (!line.startsWith("data: ")) continue;
+        const content = line.slice(6);
+        if (content === "[DONE]") {
+          onDone(fullText);
+          return;
+        }
+        // Frames are JSON, so tokens containing newlines cannot break the stream.
+        let event: StreamEvent;
+        try {
+          event = JSON.parse(content) as StreamEvent;
+        } catch {
           fullText += content;
           onChunk(content);
+          continue;
+        }
+        if (event.type === "token" && event.text) {
+          fullText += event.text;
+          onChunk(event.text);
+        } else if (event.type === "citations" && event.citations) {
+          onCitations?.(event.citations);
+        } else if (event.type === "error") {
+          onError?.(event.message || "Stream error");
+          return;
         }
       }
     }

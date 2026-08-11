@@ -5,15 +5,28 @@ from datetime import UTC, datetime, timedelta
 
 from backend.config import DB_PATH
 
+SQLITE_TIMEOUT_SECONDS = 15.0
+
 
 def now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
+    """Open a tuned SQLite connection.
+
+    WAL lets readers run concurrently with a writer (the single biggest
+    availability win for SQLite under a web server), busy_timeout removes the
+    "database is locked" errors under concurrent writes, and NORMAL sync keeps
+    durability acceptable while avoiding an fsync on every commit.
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=SQLITE_TIMEOUT_SECONDS)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute(f"PRAGMA busy_timeout = {int(SQLITE_TIMEOUT_SECONDS * 1000)}")
+    conn.execute("PRAGMA temp_store = MEMORY")
     return conn
 
 
@@ -857,3 +870,175 @@ def set_org_join_code(org_id: int, join_code: str) -> bool:
     conn.commit()
     conn.close()
     return True
+
+
+# -- Schema migrations -------------------------------------------------------
+def apply_migrations() -> list[int]:
+    """Run every pending schema migration. Call once at startup, after init_db()."""
+    from backend.migrations import run_migrations
+
+    conn = get_connection()
+    try:
+        return run_migrations(conn)
+    finally:
+        conn.close()
+
+
+def schema_version() -> int:
+    from backend.migrations import current_version
+
+    conn = get_connection()
+    try:
+        return current_version(conn)
+    finally:
+        conn.close()
+
+
+# -- Safety events -----------------------------------------------------------
+def record_safety_event(
+    user_id: int | None,
+    organization_id: int | None,
+    session_id: str | None,
+    severity: str,
+    categories: list[str] | None = None,
+    blocked: bool = False,
+    excerpt: str = "",
+    source: str = "classifier",
+) -> int:
+    """Persist a safety signal so staff can review it. Never raises on schema drift."""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            """INSERT INTO safety_events
+               (user_id, organization_id, session_id, severity, categories, source, blocked, excerpt, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (
+                user_id,
+                organization_id,
+                session_id,
+                severity,
+                json.dumps(categories or [], ensure_ascii=False),
+                source,
+                1 if blocked else 0,
+                excerpt,
+                now_iso(),
+            ),
+        )
+        conn.commit()
+        return int(cur.lastrowid or 0)
+    finally:
+        conn.close()
+
+
+def list_safety_events(
+    organization_id: int | None = None,
+    user_id: int | None = None,
+    min_severity: str = "medium",
+    limit: int = 100,
+) -> list[dict]:
+    """Recent safety events, most severe context first."""
+    order = {"none": 0, "low": 1, "medium": 2, "high": 3, "crisis": 4}
+    allowed = [name for name, rank in order.items() if rank >= order.get(min_severity, 2)]
+    placeholders = ",".join("?" for _ in allowed)
+    clauses = [f"severity IN ({placeholders})"]
+    params: list = list(allowed)
+    if organization_id is not None:
+        clauses.append("organization_id = ?")
+        params.append(organization_id)
+    if user_id is not None:
+        clauses.append("user_id = ?")
+        params.append(user_id)
+    params.append(max(1, min(limit, 500)))
+
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM safety_events WHERE " + " AND ".join(clauses) + " ORDER BY created_at DESC LIMIT ?",
+            tuple(params),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    events = []
+    for row in rows:
+        event = dict(row)
+        try:
+            event["categories"] = json.loads(event.get("categories") or "[]")
+        except Exception:
+            event["categories"] = []
+        event["blocked"] = bool(event.get("blocked"))
+        events.append(event)
+    return events
+
+
+def acknowledge_safety_event(event_id: int, staff_user_id: int) -> bool:
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "UPDATE safety_events SET acknowledged_at = ?, acknowledged_by = ? WHERE id = ?",
+            (now_iso(), staff_user_id, event_id),
+        )
+        conn.commit()
+        return bool(cur.rowcount)
+    finally:
+        conn.close()
+
+
+# -- Chat transcript ---------------------------------------------------------
+def record_chat_message(
+    session_id: str,
+    user_id: int | None,
+    organization_id: int | None,
+    role: str,
+    content: str,
+    citations: list[dict] | None = None,
+    model: str = "",
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    latency_ms: int = 0,
+) -> None:
+    """Append one turn to the durable transcript (separate from the session blob)."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO chat_messages
+               (session_id, user_id, organization_id, role, content, citations_json,
+                model, prompt_tokens, completion_tokens, latency_ms, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                session_id,
+                user_id,
+                organization_id,
+                role,
+                content,
+                json.dumps(citations or [], ensure_ascii=False),
+                model,
+                prompt_tokens,
+                completion_tokens,
+                latency_ms,
+                now_iso(),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_chat_messages(session_id: str, limit: int = 200) -> list[dict]:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM chat_messages WHERE session_id = ? ORDER BY id ASC LIMIT ?",
+            (session_id, max(1, min(limit, 1000))),
+        ).fetchall()
+    finally:
+        conn.close()
+    messages = []
+    for row in rows:
+        message = dict(row)
+        try:
+            message["citations"] = json.loads(message.pop("citations_json") or "[]")
+        except Exception:
+            message["citations"] = []
+        messages.append(message)
+    return messages

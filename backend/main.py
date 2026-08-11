@@ -4,8 +4,11 @@ Core endpoints for chat, quiz, study plans, profile sync, exports, progress, rol
 """
 from __future__ import annotations
 
+import json
+import logging
 import os
 import re
+from contextlib import asynccontextmanager
 from typing import List, Optional
 
 import uvicorn
@@ -20,8 +23,8 @@ from slowapi.middleware import SlowAPIMiddleware
 from fastapi.responses import StreamingResponse
 
 from backend.auth import issue_session_token, logout_session_token, verify_session_token
-from backend.chat import chat, clear_session
-from backend.config import DB_PATH, GROQ_MODEL
+from backend.chat import ChatUnavailable, chat, clear_session
+from backend.config import DB_PATH, GROQ_MODEL, settings
 from backend.db import (
     create_user,
     deactivate_user,
@@ -38,6 +41,7 @@ from backend.db import (
     get_user,
     get_user_progress,
     get_user_with_org,
+    apply_migrations,
     init_db,
     link_child_to_parent,
     log_event,
@@ -47,6 +51,7 @@ from backend.db import (
     update_user,
 )
 from backend.language import normalize_language
+from backend import metrics
 from backend.flashcards import generate_flashcards
 from backend.quiz import evaluate_answer, generate_quiz
 from backend.rag import get_rag_catalog, get_rag_stats
@@ -56,7 +61,40 @@ from backend.observability import configure_logging, init_error_monitoring, requ
 
 configure_logging()
 init_error_monitoring()
-app = FastAPI(title="AI Sakhi API", version="2.0.0")
+
+API_VERSION = "2.1.0"
+logger = logging.getLogger("sakhi.api")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Validate configuration, migrate the schema, then serve."""
+    errors = validate_production_config()
+    if errors:
+        raise RuntimeError("Production configuration invalid: " + "; ".join(errors))
+
+    init_db()
+    applied = apply_migrations()
+    ensure_default_organization()
+
+    from backend.auth import purge_expired_tokens
+
+    purged = purge_expired_tokens()
+
+    if settings.using_dev_jwt_secret:
+        if settings.is_production:
+            raise RuntimeError("SAKHI_JWT_SECRET must be set to a strong unique value in production")
+        logger.warning("SAKHI_JWT_SECRET is not set - using the insecure development default")
+
+    logger.info(
+        "startup_complete",
+        extra={"migrations_applied": applied, "tokens_purged": purged, "api_version": API_VERSION},
+    )
+    yield
+    logger.info("shutdown_complete")
+
+
+app = FastAPI(title="AI Sakhi API", version=API_VERSION, lifespan=lifespan)
 
 from backend.security import security_middleware
 app.middleware("http")(request_logging_middleware)
@@ -96,7 +134,7 @@ def require_roles(*roles: str):
         return token_data
     return _dep
 
-ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+ALLOWED_ORIGINS = settings.allowed_origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -106,20 +144,6 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-async def startup():
-    import os
-    errors = validate_production_config()
-    if errors:
-        raise RuntimeError("Production configuration invalid: " + "; ".join(errors))
-    init_db()
-    ensure_default_organization()
-    secret = os.environ.get("SAKHI_JWT_SECRET", "sakhi-dev-secret-change-in-production")
-    if secret == "sakhi-dev-secret-change-in-production":
-        if os.getenv("SAKHI_ENV") == "production":
-            raise RuntimeError("SAKHI_JWT_SECRET must be set to a strong unique value in production")
-        print("[WARNING] SAKHI_JWT_SECRET is not set — using insecure development default")
-    print("[OK] AI Sakhi backend started. DB initialized.")
 
 
 class UserCreate(BaseModel):
@@ -221,19 +245,75 @@ class SessionEndRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {"message": "AI Sakhi API is running", "version": "1.4.0"}
+    return {"message": "AI Sakhi API is running", "version": API_VERSION}
+
+
+@app.get("/live")
+def api_live():
+    """Liveness probe: process is up. Never touches the database."""
+    return {"status": "alive", "version": API_VERSION}
 
 
 @app.get("/health")
 def api_health():
+    """Readiness probe with dependency detail."""
+    from backend.db import schema_version
+
+    checks = {}
+    try:
+        conn = get_connection()
+        conn.execute("SELECT 1").fetchone()
+        conn.close()
+        checks["database"] = "ok"
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
+    except Exception as exc:
+        checks["database"] = "error: " + str(exc)[:120]
+
     rag = get_rag_stats()
+    checks["rag"] = "ok" if rag.get("ready") else "empty_index"
+    checks["llm"] = "configured" if settings.groq_api_key else "missing_api_key"
+
+    healthy = checks["database"] == "ok" and checks["llm"] == "configured"
     return {
-        "status": "ok",
-        "version": "1.4.0",
+        "status": "ok" if healthy else "degraded",
+        "version": API_VERSION,
+        "environment": settings.env,
         "model": GROQ_MODEL,
+        "embedding_model": settings.embedding_model,
+        "schema_version": schema_version(),
+        "checks": checks,
         "database": {"path": os.path.basename(DB_PATH), "configured": bool(DB_PATH)},
         "rag": rag,
     }
+
+
+@app.get("/metrics")
+def api_metrics():
+    """Prometheus text exposition. Scrape-only, no personal data."""
+    if not settings.enable_metrics:
+        raise HTTPException(status_code=404, detail="Metrics are disabled")
+    from fastapi.responses import PlainTextResponse
+
+    return PlainTextResponse(metrics.render_prometheus(), media_type="text/plain; version=0.0.4")
+
+
+@app.get("/auth/csrf")
+def api_csrf(response: Response):
+    """Issue a double-submit CSRF token for cookie-authenticated browsers."""
+    from backend.security import CSRF_COOKIE, new_csrf_token
+
+    token = new_csrf_token()
+    response.set_cookie(
+        key=CSRF_COOKIE,
+        value=token,
+        httponly=False,  # the browser must echo it back in a header
+        samesite="strict",
+        secure=settings.is_production,
+        max_age=settings.session_hours * 3600,
+        path="/",
+    )
+    return {"csrf_token": token}
 
 
 @app.post("/auth/token")
@@ -327,16 +407,16 @@ def api_update_user(user_id: int, req: UserUpdate):
 @app.get("/users")
 def api_list_users(organization_id: Optional[int] = None):
     """List all users, optionally filtered by organisation. Used by Admin Console and Parent Dashboard."""
-    conn = __import__("sqlite3").connect(DB_PATH)
-    conn.row_factory = __import__("sqlite3").Row
+    conn = get_connection()
     if organization_id is not None:
         rows = conn.execute(
-            "SELECT id, name, class_, language, weak_subject, role, organization_id FROM users WHERE organization_id = ? ORDER BY name",
+            "SELECT id, name, class AS class_, language, weak_subject, role, organization_id "
+            "FROM users WHERE organization_id = ? ORDER BY name",
             (organization_id,),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT id, name, class_, language, weak_subject, role, organization_id FROM users ORDER BY name"
+            "SELECT id, name, class AS class_, language, weak_subject, role, organization_id FROM users ORDER BY name"
         ).fetchall()
     conn.close()
     return {"users": [dict(r) for r in rows]}
@@ -345,15 +425,37 @@ def api_list_users(organization_id: Optional[int] = None):
 @app.put("/users/{user_id}")
 def api_update_user_plural(user_id: int, body: dict):
     """Role-update alias used by Admin Console (PATCH-style partial update)."""
-    conn = __import__("sqlite3").connect(DB_PATH)
-    allowed = {"role", "name", "class_", "language", "weak_subject", "organization_id"}
-    updates = {k: v for k, v in body.items() if k in allowed}
+    # API field name -> actual column name ("class" is a reserved-looking column).
+    column_for = {
+        "role": "role",
+        "name": "name",
+        "class_": "class",
+        "language": "language",
+        "weak_subject": "weak_subject",
+        "organization_id": "organization_id",
+    }
+    updates = {key: value for key, value in body.items() if key in column_for}
     if not updates:
         raise HTTPException(status_code=400, detail="No valid fields to update")
-    set_clause = ", ".join(f"{k} = ?" for k in updates)
-    conn.execute(f"UPDATE users SET {set_clause} WHERE id = ?", (*updates.values(), user_id))
-    conn.commit()
-    conn.close()
+    if "role" in updates and updates["role"] not in {"student", "teacher", "parent", "admin"}:
+        raise HTTPException(status_code=400, detail="Unknown role")
+
+    set_clause = ", ".join('"' + column_for[key] + '" = ?' for key in updates)
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            "UPDATE users SET " + set_clause + " WHERE id = ?", (*updates.values(), user_id)
+        )
+        conn.commit()
+        if not cursor.rowcount:
+            raise HTTPException(status_code=404, detail="User not found")
+    finally:
+        conn.close()
+
+    if "role" in updates:
+        from backend.auth import revoke_all_sessions
+
+        revoke_all_sessions(user_id)  # a role change must not keep old claims alive
     return {"ok": True, "user_id": user_id, **updates}
 
 
@@ -362,19 +464,31 @@ def api_chat(req: ChatRequest):
     existing = get_chat_history(req.session_id)
     if existing and existing.get("user_id") and existing["user_id"] != req.user_id:
         raise HTTPException(status_code=403, detail="Chat session access denied")
-    response = chat(
-        req.session_id,
-        req.message,
-        req.class_,
-        req.simplify,
-        req.language,
-        req.user_name,
-        req.weak_subject,
-        req.translate_to,
-        req.user_id,
-        req.organization_id,
-    )
-    return {"response": response, "language": normalize_language(req.translate_to or req.language)}
+    try:
+        result = chat(
+            req.session_id,
+            req.message,
+            req.class_,
+            req.simplify,
+            req.language,
+            req.user_name,
+            req.weak_subject,
+            req.translate_to,
+            req.user_id,
+            req.organization_id,
+        )
+    except ChatUnavailable as exc:
+        # Be honest about failure instead of returning a cheerful fake answer.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return {
+        "response": result["response"],
+        "citations": result.get("citations", []),
+        "grounded": result.get("grounded", False),
+        "safety": result.get("safety", {}),
+        "usage": result.get("usage", {}),
+        "language": normalize_language(req.translate_to or req.language),
+    }
 
 
 @app.post("/chat/upload")
@@ -385,14 +499,18 @@ async def api_chat_upload(
     user_id: Optional[int] = None,
 ):
     """Accept a PDF or image, extract text, return explanation and quiz offer."""
-    from groq import Groq as _Groq
     import base64
 
-    client_g = _Groq(api_key=os.getenv("GROQ_API_KEY", ""))
-    max_upload = 10 * 1024 * 1024
+    from backend.llm import get_client as _get_llm_client
+
+    client_g = _get_llm_client()
+    max_upload = settings.max_upload_bytes
     content = await file.read(max_upload + 1)
     if len(content) > max_upload:
-        raise HTTPException(status_code=413, detail="File exceeds the 10 MB limit")
+        raise HTTPException(
+            status_code=413,
+            detail="File exceeds the " + str(max_upload // (1024 * 1024)) + " MB limit",
+        )
     fname = file.filename or "document"
     ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
 
@@ -401,7 +519,7 @@ async def api_chat_upload(
             b64 = base64.b64encode(content).decode()
             mime = f"image/{ext}" if ext != "jpg" else "image/jpeg"
             resp = client_g.chat.completions.create(
-                model="llava-v1.5-7b-4096-preview",
+                model=settings.groq_vision_model,
                 messages=[{
                     "role": "user",
                     "content": [
@@ -416,13 +534,28 @@ async def api_chat_upload(
             from io import BytesIO
             from pypdf import PdfReader
             reader = PdfReader(BytesIO(content))
-            if len(reader.pages) > 50:
-                raise HTTPException(status_code=413, detail="PDF exceeds the 50-page limit")
+            if len(reader.pages) > settings.max_pdf_pages:
+                raise HTTPException(
+                    status_code=413,
+                    detail="PDF exceeds the " + str(settings.max_pdf_pages) + "-page limit",
+                )
             text = "\n".join((page.extract_text() or "") for page in reader.pages)
         elif ext in ("txt", "md"):
-            text = content.decode("utf-8", errors="strict")
+            try:
+                text = content.decode("utf-8")
+            except UnicodeDecodeError:
+                raise HTTPException(status_code=415, detail="That text file is not valid UTF-8")
         else:
             raise HTTPException(status_code=415, detail="Supported uploads: PDF, TXT, MD, PNG, JPG, WEBP")
+
+        # Text-bearing formats share one summarisation path.
+        # (This block used to sit after a `raise`, so PDF/TXT/MD uploads always 500ed.)
+        if ext not in ("png", "jpg", "jpeg", "webp", "gif"):
+            if not text.strip():
+                raise HTTPException(
+                    status_code=422,
+                    detail="No readable text found in that file. If it is a scan, upload it as an image.",
+                )
             # Trim to reasonable size
             text = text[:6000]
             prompt = (
@@ -544,6 +677,8 @@ def api_generate_study_notes(req: StudyNotesRequest):
             language=req.language,
             subject=req.subject,
         )
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Internal server error")
     if req.user_id:
@@ -700,6 +835,8 @@ def api_notifications(user_id: int):
                 "body": f"{row['subject']} • Due: {(row['due_date'] or 'No deadline')[:10]}",
                 "href": "/dashboard"
             })
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception:
         pass
     conn.close()
@@ -724,19 +861,29 @@ def api_chat_stream(req: StreamChatRequest):
     """Stream chat response token-by-token using Server-Sent Events."""
     from backend.chat import stream_chat
 
+    def _frame(payload: dict) -> str:
+        # JSON-encode every frame: a token containing newlines would otherwise
+        # terminate the SSE event early and corrupt the stream.
+        return "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+
     def event_generator():
-        for chunk in stream_chat(
-            session_id=req.session_id,
-            user_message=req.message,
-            class_=req.class_,
-            selected_language=req.language,
-            user_name=req.user_name,
-            weak_subject=req.weak_subject,
-            user_id=req.user_id,
-            organization_id=req.organization_id,
-        ):
-            # SSE format: data: <chunk>\n\n
-            yield f"data: {chunk}\n\n"
+        try:
+            for event in stream_chat(
+                session_id=req.session_id,
+                user_message=req.message,
+                class_=req.class_,
+                selected_language=req.language,
+                user_name=req.user_name,
+                weak_subject=req.weak_subject,
+                user_id=req.user_id,
+                organization_id=req.organization_id,
+            ):
+                yield _frame(event)
+        except HTTPException:
+            raise  # never swallow an intentional 4xx into a 500
+        except Exception:
+            logger.exception("chat_stream_failed")
+            yield _frame({"type": "error", "message": "The tutor is unavailable right now. Please try again."})
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
@@ -811,6 +958,8 @@ def api_create_assignment(req: AssignmentCreateRequest):
             instructions=req.instructions,
             due_date=req.due_date,
         )
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -827,6 +976,8 @@ def api_list_assignments(
             teacher_id=teacher_id,
             class_=class_,
         )
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -861,6 +1012,8 @@ def api_submit_assignment(assignment_id: int, req: AssignmentSubmitRequest):
             score=req.score,
             total_questions=req.total_questions,
         )
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -869,6 +1022,8 @@ def api_get_student_assignments(userId: int, organization_id: Optional[int] = No
     from backend.teacher_tools import get_student_assignments
     try:
         return get_student_assignments(userId, organization_id)
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -877,6 +1032,8 @@ def api_get_assignment_submissions(assignment_id: int):
     from backend.teacher_tools import get_assignment_submissions
     try:
         return {"submissions": get_assignment_submissions(assignment_id)}
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -885,6 +1042,8 @@ def api_generate_student_report_data(userId: int):
     from backend.teacher_tools import generate_student_report_data
     try:
         return generate_student_report_data(userId)
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -896,6 +1055,8 @@ def api_class_analytics(org_id: int):
     from backend.teacher_tools import get_class_analytics
     try:
         return get_class_analytics(org_id)
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -905,6 +1066,8 @@ def api_organization_roster(org_id: int):
     from backend.teacher_tools import get_organization_roster
     try:
         return {"roster": get_organization_roster(org_id)}
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -921,6 +1084,8 @@ def api_update_submission_feedback(submission_id: int, req: FeedbackUpdateReques
         if not res:
             raise HTTPException(status_code=404, detail="Submission not found")
         return res
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -1020,6 +1185,8 @@ def api_seed_demo_data(req: DemoSeedRequest):
         conn.commit()
         conn.close()
         return {"ok": True, "message": f"Successfully created and seeded test {req.role} account!", "user_id": user_id}
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -1054,6 +1221,8 @@ def api_daily_activity(org_id: int):
             
         conn.close()
         return {"activity": activity}
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -1091,6 +1260,8 @@ def api_recommendations(user_id: int):
     from backend.recommendations import get_recommendations
     try:
         return get_recommendations(user_id)
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -1101,6 +1272,8 @@ def api_recommended_difficulty(user_id: int, topic: Optional[str] = None):
     from backend.adaptive import get_difficulty_context
     try:
         return get_difficulty_context(user_id, topic=topic)
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -1111,6 +1284,8 @@ def api_leaderboard(org_id: int):
     try:
         board = get_leaderboard(org_id)
         return {"leaderboard": board, "total": len(board)}
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -1135,6 +1310,8 @@ def api_update_assignment(assignment_id: int, req: AssignmentUpdateRequest, requ
         conn.commit()
         conn.close()
         return {"ok": True, "message": "Assignment updated"}
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -1145,6 +1322,8 @@ def api_deactivate_user(user_id: int):
     try:
         deactivate_user(user_id)
         return {"ok": True, "message": "User deactivated"}
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -1154,6 +1333,8 @@ def api_get_children(parent_id: int):
     """Return all students linked to a parent."""
     try:
         return {"children": get_children(parent_id)}
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -1164,6 +1345,8 @@ def api_link_child(req: LinkChildRequest):
     try:
         link_child_to_parent(req.parent_id, req.child_id)
         return {"ok": True, "message": "Child linked to parent"}
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -1214,6 +1397,8 @@ Return ONLY a JSON array of 3 strings. Language: {req.language}"""
         raw = _re.sub(r"\n?```$", "", raw)
         suggestions = json.loads(raw)
         return {"suggestions": suggestions[:3]}
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception:
         return {"suggestions": [
             f"Good effort on {req.topic}! Keep practicing.",

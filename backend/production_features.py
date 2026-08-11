@@ -46,6 +46,8 @@ def readiness():
     try:
         conn = get_connection(); conn.execute("SELECT 1").fetchone(); conn.close()
         return {"status": "ready", "database": True, "timestamp": now_iso()}
+    except HTTPException:
+        raise  # never swallow an intentional 4xx into a 500
     except Exception:
         raise HTTPException(503, "Service is not ready")
 

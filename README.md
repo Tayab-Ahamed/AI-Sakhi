@@ -213,7 +213,7 @@ sequenceDiagram
 - Request IDs, security headers, structured JSON logs, and latency metrics
 - Optional Sentry monitoring with default PII disabled
 - Fail-fast production configuration and deployment preflight
-- Non-root, multi-stage production containers
+- Non-root, multi-stage production containers (see `Dockerfile.backend`)
 - Liveness and readiness endpoints
 - Online-safe SQLite backups with integrity checks and retention
 - Privacy export/request workflows and minimal safeguarding-event storage

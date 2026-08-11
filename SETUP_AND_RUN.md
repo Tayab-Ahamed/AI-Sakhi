@@ -90,5 +90,5 @@ The frontend sidebar will show whether RAG is ready.
 ## 8. Run Tests
 
 ```powershell
-python -m unittest discover tests -v
+pytest            # collects backend/tests and tests/
 ```
