@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- build stage: compile wheels so the runtime image needs no toolchain ----
-FROM python:3.11-slim AS builder
+FROM python:3.14-slim AS builder
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
@@ -11,7 +11,7 @@ RUN python -m venv /opt/venv && /opt/venv/bin/pip install --upgrade pip \
     && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # ---- runtime stage ----
-FROM python:3.11-slim AS runtime
+FROM python:3.14-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
