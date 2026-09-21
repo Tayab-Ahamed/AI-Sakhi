@@ -10,14 +10,17 @@
  * Mount once inside AppProviders. Uses usePwa() internally.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePwa } from "@/lib/use-pwa";
 import { Download, WifiOff, RefreshCw, X } from "lucide-react";
 
+const emptySubscribe = () => () => {};
+
 const INSTALL_DISMISSED_KEY = "sakhi_pwa_install_dismissed";
 
 export default function PwaManager() {
+  const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
   const { isOnline, canInstall, isInstalled, updateAvailable, installPwa, applyUpdate } = usePwa();
   const [showInstall, setShowInstall] = useState(false);
   const [installDismissed, setInstallDismissed] = useState(() => (
@@ -43,6 +46,8 @@ export default function PwaManager() {
     await installPwa();
     setShowInstall(false);
   };
+
+  if (!mounted) return null;
 
   return (
     <>

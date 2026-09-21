@@ -339,19 +339,9 @@ function SmartSprintCard({ sprint }: { sprint: SmartSprint }) {
   };
 
   return (
-    <div
-      className="card"
-      style={{
-        padding: "22px 24px",
-        marginBottom: 20,
-        background: "linear-gradient(135deg, rgba(6, 78, 59, 0.04) 0%, rgba(13, 148, 136, 0.08) 100%)",
-        border: "1.5px solid rgba(13, 148, 136, 0.25)",
-        borderRadius: "var(--radius-xl)",
-        position: "relative",
-        boxShadow: "var(--shadow-sm)",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+    <div className="bezel-shell light-adapt" style={{ marginBottom: 20 }}>
+      <div className="bezel-core light-adapt" style={{ padding: "22px 24px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", borderRadius: 99, background: "#0d9488", color: "white", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
             <span>⚡ Daily Smart Sprint</span>
@@ -416,6 +406,7 @@ function SmartSprintCard({ sprint }: { sprint: SmartSprint }) {
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );
