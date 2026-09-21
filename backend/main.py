@@ -53,7 +53,7 @@ from backend.db import (
 from backend.language import normalize_language
 from backend import metrics
 from backend.flashcards import generate_flashcards
-from backend.quiz import evaluate_answer, generate_quiz
+from backend.quiz import evaluate_answer, evaluate_quiz_batch, generate_quiz
 from backend.rag import get_rag_catalog, get_rag_stats
 from backend.study_notes import generate_study_notes
 from backend.study_plan import generate_study_plan
@@ -191,6 +191,15 @@ class EvaluateRequest(BaseModel):
     user_answer: str
     language: str = "English"
     user_id: Optional[int] = None
+
+
+class EvaluateBatchRequest(BaseModel):
+    questions: list[dict]
+    answers: dict[str, str]
+    language: str = "English"
+    topic: str = ""
+    user_id: Optional[int] = None
+    update_progress: bool = True
 
 
 class StudyPlanRequest(BaseModel):
@@ -616,6 +625,45 @@ def api_evaluate(req: EvaluateRequest):
     if req.user_id:
         log_event("quiz_answer_checked", user_id=req.user_id, metadata={"language": normalize_language(req.language)})
     return evaluate_answer(req.question, req.user_answer, req.language)
+
+
+@app.post("/quiz/evaluate-batch")
+def api_evaluate_batch(req: EvaluateBatchRequest):
+    eval_result = evaluate_quiz_batch(req.questions, req.answers, req.language, req.topic)
+    streak = None
+    if req.user_id and req.update_progress:
+        streak = update_progress(req.user_id, req.topic, eval_result["score"], eval_result["total"])
+        log_event(
+            "quiz_completed_batch",
+            user_id=req.user_id,
+            metadata={"topic": req.topic, "score": eval_result["score"], "total": eval_result["total"], "percentage": eval_result["percentage"]},
+        )
+        if eval_result.get("misconceptions"):
+            try:
+                conn = get_connection()
+                now_str = now_iso()
+                for m in eval_result["misconceptions"]:
+                    evidence_str = json.dumps({
+                        "question": m.get("question", ""),
+                        "answer": m.get("answer", ""),
+                        "expected": m.get("expected", ""),
+                    }, ensure_ascii=False)
+                    conn.execute(
+                        """INSERT INTO misconceptions(user_id, topic, misconception_type, evidence, occurrence_count, last_seen_at)
+                           VALUES(?,?,?,?,1,?)
+                           ON CONFLICT(user_id, topic, misconception_type) DO UPDATE SET
+                           evidence=excluded.evidence, occurrence_count=occurrence_count+1, last_seen_at=excluded.last_seen_at, resolved_at=NULL""",
+                        (req.user_id, req.topic.strip(), m["misconception_type"], evidence_str, now_str),
+                    )
+                conn.commit()
+                conn.close()
+            except Exception as exc:
+                logger.warning("failed_recording_quiz_misconceptions", extra={"error": str(exc)})
+
+    return {
+        **eval_result,
+        "streak": streak,
+    }
 
 
 @app.post("/study-plan")
@@ -1376,23 +1424,21 @@ def api_generate_join_code(org_id: int):
 @app.post("/ai/feedback-suggestion")
 def api_feedback_suggestion(req: FeedbackSuggestionRequest):
     """Generate 3 AI-suggested feedback phrases for a teacher."""
-    import os
-    from groq import Groq
-    from backend.config import GROQ_MODEL
+    from backend.llm import complete
     try:
-        client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
         pct = round((req.score / req.total) * 100) if req.total > 0 else 0
         performance = "excellent" if pct >= 80 else ("good" if pct >= 60 else ("average" if pct >= 40 else "struggling"))
         prompt = f"""Student {req.student_name} scored {req.score}/{req.total} ({pct}%) on '{req.topic}'. Performance: {performance}.
 Generate exactly 3 short encouraging teacher feedback phrases (1-2 sentences each). Constructive, warm, topic-specific.
 Return ONLY a JSON array of 3 strings. Language: {req.language}"""
-        resp = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7, max_tokens=300,
+        res = complete(
+            [{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=300,
+            tag="teacher_feedback_gen",
         )
         import json, re as _re
-        raw = resp.choices[0].message.content.strip()
+        raw = res.text.strip()
         raw = _re.sub(r"^```[a-z]*\n?", "", raw)
         raw = _re.sub(r"\n?```$", "", raw)
         suggestions = json.loads(raw)

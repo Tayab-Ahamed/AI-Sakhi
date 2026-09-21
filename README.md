@@ -67,21 +67,23 @@ flowchart LR
 
 ### 🎓 Students
 
-- 💬 Multilingual, streaming AI tutoring
+- 💬 Multilingual, streaming AI tutoring with **KaTeX LaTeX math rendering** ($E = mc^2$, fractions, radicals)
 - 📖 Page-attributed NCERT retrieval
-- 🎯 Personalized **Smart Sprints**
-- 🧩 Explainable misconception detection
-- 📊 Topic mastery and confidence
+- 🎯 Daily **Smart Sprints** (Warmup → Practice → Recall) with built-in focus timer
+- 🧩 Explainable misconception detection (`factual`, `conceptual`, `calculation`, `procedural`) with 1-click chat remediation
+- ⚡ High-throughput batch quiz evaluation (`POST /quiz/evaluate-batch`)
+- 📊 Topic mastery and confidence tracking
+- 📱 Responsive UI with fluid mobile navigation drawer
 - 🃏 SM-2 spaced-repetition flashcards
 - 📝 Quizzes, notes, study plans, and practice papers
-- ⏱ Focus sessions, goals, streaks, XP, and artifacts
+- ⏱ Focus sessions, goals, streaks, XP, and PDF export
 
 </td>
 <td width="50%" valign="top">
 
 ### 👩‍🏫 Teachers
 
-- ✅ Reviewed curriculum question bank
+- 🏛 Interactive **Curriculum Question Bank** with draft authoring & review workflows
 - 📚 Board, class, subject, chapter, and outcome tags
 - 📋 Assignment and submission workflows
 - 📈 Class analytics and intervention signals
@@ -89,7 +91,7 @@ flowchart LR
 
 ### 👨‍👩‍👧 Guardians & Admins
 
-- 🌱 Positive weekly guardian digests
+- 🌱 **Weekly Guardian Digest** with celebration wins, upcoming priorities & dinner table conversation starters
 - 🔐 Parent-child ownership isolation
 - 🏫 Organization-level role controls
 - 🧾 Audit trails and account administration
@@ -104,12 +106,13 @@ flowchart LR
 
 | Intelligence layer | Model / algorithm | What it improves |
 |---|---|---|
-| Conversational tutoring | Groq-hosted LLaMA via configurable `GROQ_MODEL` | Fast multilingual explanations |
+| Conversational tutoring | Unified `backend.llm.complete()` gateway via Groq | Resilient multilingual explanations with automatic offline fallback |
 | Textbook retrieval | `all-MiniLM-L6-v2` + ChromaDB cosine search | Relevant curriculum evidence |
 | Memory scheduling | SM-2 spaced repetition | Long-term recall |
 | Adaptive difficulty | Performance-based calibration | Better challenge balance |
-| Mastery | Accuracy × difficulty × recency × hint penalty | Explainable topic confidence |
-| Misconceptions | Deterministic auditable classifier | Targeted remediation |
+| Smart Sprints | Time-budgeted micro-curriculum generation | Structured Warmup, Practice, and Recall cycles |
+| Mastery & Confidence | Accuracy × difficulty × recency × hint penalty | Explainable topic confidence with targeted chat remediation |
+| Misconceptions | Auditable multi-type classifier & batch evaluator | Pinpoints conceptual, factual, procedural, and calculation gaps |
 | Quality evaluation | Deterministic release-gate suite | Prevents unsafe or unsupported regressions |
 
 <details>

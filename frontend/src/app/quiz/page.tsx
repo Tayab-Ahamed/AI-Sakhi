@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -38,7 +38,6 @@ function QuizPageContent() {
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [diffRecommendation, setDiffRecommendation] = useState<{ recommended: string; average_pct: number | null; data_points: number } | null>(null);
   const [diffOverridden, setDiffOverridden] = useState(false);
-  const diffFetchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [phase, setPhase] = useState<"setup" | "active" | "done">("setup");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [quizTopic, setQuizTopic] = useState("");
@@ -52,12 +51,10 @@ function QuizPageContent() {
   // ── Adaptive difficulty: auto-fetch when topic changes ──────────────
   useEffect(() => {
     if (!user?.user_id || !topic.trim()) {
-      setDiffRecommendation(null);
       return;
     }
     // Debounce by 600ms so we don't fire on every keystroke
-    if (diffFetchRef.current) clearTimeout(diffFetchRef.current);
-    diffFetchRef.current = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       try {
         const ctx = await api.getRecommendedDifficulty(user.user_id, topic.trim()) as { recommended: string; average_pct: number | null; data_points: number };
         setDiffRecommendation(ctx);
@@ -69,7 +66,7 @@ function QuizPageContent() {
       }
     }, 600);
     return () => {
-      if (diffFetchRef.current) clearTimeout(diffFetchRef.current);
+      clearTimeout(timer);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topic, user?.user_id]);
@@ -121,15 +118,58 @@ function QuizPageContent() {
     setLoading(true);
     const res: Record<number, Result> = {};
     let score = 0;
-    for (const q of questions) {
-      const r = await api.evaluateAnswer({ question: q, user_answer: answers[q.id] || "A", language: user?.language, user_id: user?.user_id }) as Result;
-      res[q.id] = r;
-      if (r.is_correct) score++;
+    try {
+      if (user?.user_id) {
+        const batchData = await api.evaluateQuizBatch({
+          user_id: user.user_id,
+          topic: quizTopic,
+          items: questions.map((q) => ({
+            question: q,
+            user_answer: answers[q.id] || "A",
+            language: user.language,
+          })),
+        }) as {
+          score: number;
+          total: number;
+          results: Array<{ question_id: number; is_correct: boolean; feedback: string; correct_answer: string }>;
+        };
+        score = batchData.score;
+        batchData.results.forEach((item, idx) => {
+          const qId = questions[idx]?.id ?? item.question_id;
+          res[qId] = {
+            is_correct: item.is_correct,
+            feedback: item.feedback,
+            correct_answer: item.correct_answer,
+          };
+        });
+      } else {
+        for (const q of questions) {
+          const r = await api.evaluateAnswer({
+            question: q,
+            user_answer: answers[q.id] || "A",
+            language: user?.language,
+            user_id: user?.user_id,
+          }) as Result;
+          res[q.id] = r;
+          if (r.is_correct) score++;
+        }
+      }
+    } catch {
+      for (const q of questions) {
+        const r = await api.evaluateAnswer({
+          question: q,
+          user_answer: answers[q.id] || "A",
+          language: user?.language,
+          user_id: user?.user_id,
+        }) as Result;
+        res[q.id] = r;
+        if (r.is_correct) score++;
+      }
+      if (user?.user_id) {
+        await api.updateProgress({ user_id: user.user_id, topic: quizTopic, score, total: questions.length });
+      }
     }
     setResults(res);
-    if (user?.user_id) {
-      await api.updateProgress({ user_id: user.user_id, topic: quizTopic, score, total: questions.length });
-    }
     setPhase("done");
     setLoading(false);
 

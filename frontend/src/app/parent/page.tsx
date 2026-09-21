@@ -1,15 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { api } from "@/lib/api";
 import { useUser } from "@/lib/user-context";
 import { 
-  BarChart2, BookOpen, Flame, Trophy, TrendingUp, User, 
-  AlertCircle, Clock, MessageSquare, CheckCircle2, Award, Calendar
+  BarChart2, Flame, Trophy, AlertCircle, Clock, 
+  MessageSquare, CheckCircle2, Calendar, Sparkles, Target, Lightbulb
 } from "lucide-react";
+
+type GuardianDigestData = {
+  child: { name: string; class_: string };
+  period_days: number;
+  study_minutes: number;
+  quiz_attempts: number;
+  average_score_pct: number | null;
+  celebrate: string | null;
+  focus_next: string | null;
+  parent_action: string;
+};
 
 type ChildReport = {
   user: { name: string; class_: string; weak_subject: string };
@@ -42,6 +53,7 @@ export default function ParentPage() {
   const [children, setChildren] = useState<Array<{ id: number; name: string; class_: string }>>([]);
   const [selectedChild, setSelectedChild] = useState<number | null>(null);
   const [report, setReport] = useState<ChildReport | null>(null);
+  const [digest, setDigest] = useState<GuardianDigestData | null>(null);
   const [studyTime, setStudyTime] = useState<StudyTimeItem[]>([]);
   const [mastery, setMastery] = useState<Array<{ topic: string; attempts: number; avg_pct: number; last_attempted: string }>>([]);
   const [loading, setLoading] = useState(false);
@@ -52,48 +64,65 @@ export default function ParentPage() {
     if (isReady && user && !["parent", "admin"].includes(user.role || "")) router.push("/dashboard");
   }, [isReady, user, router]);
 
+  const orgId = user?.organization_id;
+  const userRole = user?.role;
+  const userId = user?.user_id;
+
   useEffect(() => {
-    if (!user?.organization_id || !["parent", "admin"].includes(user.role || "")) return;
-    const request = user.role === "admin" ? api.listUsers(user.organization_id) : api.getChildren(user.user_id);
+    if (!orgId || !["parent", "admin"].includes(userRole || "") || !userId) return;
+    const request = userRole === "admin" ? api.listUsers(orgId) : api.getChildren(userId);
     request
       .then((data) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const res = data as any;
-        const raw: any[] = user.role === "admin" ? (res?.users || []) : (res?.children || []);
-        const students = raw.filter((u: { role?: string }) => !u.role || u.role === "student");
+        const res = data as { users?: Array<Record<string, unknown>>; children?: Array<Record<string, unknown>> };
+        const raw = userRole === "admin" ? (res?.users || []) : (res?.children || []);
+        const students = raw.filter((u) => !u.role || u.role === "student");
         const normalized = students
-          .map((u: { id?: number; user_id?: number; name: string; class_?: string; class?: string }) => ({
-            ...u,
-            id: u.id || u.user_id || 0,
-            class_: u.class_ || u.class || "",
+          .map((u) => ({
+            id: Number(u.id || u.user_id || 0),
+            name: String(u.name || ""),
+            class_: String(u.class_ || u.class || ""),
           }))
           .filter((s) => s.id > 0);
         setChildren(normalized);
         if (normalized.length > 0) setSelectedChild(normalized[0].id);
       })
       .catch(() => { setChildren([]); setSelectedChild(null); });
-  }, [user?.organization_id, user?.role]);
+  }, [orgId, userRole, userId]);
 
   useEffect(() => {
     if (!selectedChild) return;
-    setLoading(true);
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (!cancelled) setLoading(true);
+    });
     
     Promise.all([
       api.getStudentReportData(selectedChild) as Promise<ChildReport>,
       api.getStudyTime(selectedChild) as Promise<{ study_time: StudyTimeItem[] }>,
-      api.getTopicMastery(selectedChild) as Promise<{ mastery: Array<{ topic: string; attempts: number; avg_pct: number; last_attempted: string }> }>
+      api.getTopicMastery(selectedChild) as Promise<{ mastery: Array<{ topic: string; attempts: number; avg_pct: number; last_attempted: string }> }>,
+      api.getGuardianDigest(selectedChild).catch(() => null) as Promise<GuardianDigestData | null>
     ])
-      .then(([reportData, studyTimeData, masteryData]) => {
+      .then(([reportData, studyTimeData, masteryData, digestData]) => {
+        if (cancelled) return;
         setReport(reportData);
+        setDigest(digestData);
         setStudyTime(studyTimeData.study_time || []);
         setMastery(masteryData.mastery || []);
       })
       .catch(() => {
+        if (cancelled) return;
         setReport(null);
+        setDigest(null);
         setStudyTime([]);
         setMastery([]);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedChild]);
 
   if (!isReady) {
@@ -135,7 +164,6 @@ export default function ParentPage() {
   ];
 
   const totalMasteryVal = subjectData.reduce((acc, s) => acc + s.value, 0);
-  let currentCumulativePercent = 0;
   
   const HARMONIOUS_COLORS = [
     "hsl(150, 70%, 45%)", // Science/Emerald
@@ -148,10 +176,12 @@ export default function ParentPage() {
 
   const gradientSlices = subjectData.map((s, idx) => {
     const color = HARMONIOUS_COLORS[idx % HARMONIOUS_COLORS.length];
+    const prevPercent = subjectData
+      .slice(0, idx)
+      .reduce((acc, prev) => acc + (totalMasteryVal > 0 ? (prev.value / totalMasteryVal) * 100 : 25), 0);
     const percent = totalMasteryVal > 0 ? (s.value / totalMasteryVal) * 100 : 25;
-    const start = currentCumulativePercent;
-    const end = currentCumulativePercent + percent;
-    currentCumulativePercent = end;
+    const start = prevPercent;
+    const end = prevPercent + percent;
     return `${color} ${start.toFixed(1)}% ${end.toFixed(1)}%`;
   });
 
@@ -173,7 +203,7 @@ export default function ParentPage() {
                 Parent Dashboard 👨‍👩‍👧
               </h1>
               <p style={{ fontSize: 14, color: "var(--text-secondary)" }}>
-                Monitor your child's weekly activity, topic mastery strengths, and teacher commentary.
+                Monitor your child&apos;s weekly activity, topic mastery strengths, and teacher commentary.
               </p>
             </div>
             
@@ -200,8 +230,8 @@ export default function ParentPage() {
               <div style={{ fontSize: 56, marginBottom: 16 }}>👨‍👩‍👧</div>
               <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>No Linked Students Found</h2>
               <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                We couldn't locate any registered student accounts linked to your organization. 
-                Please ask your child to sign up, input your specific organization code, and choose the "Student" role.
+                We couldn&apos;t locate any registered student accounts linked to your organization. 
+                Please ask your child to sign up, input your specific organization code, and choose the &quot;Student&quot; role.
               </p>
             </div>
           ) : loading ? (
@@ -251,6 +281,76 @@ export default function ParentPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Weekly Guardian Digest Card */}
+                {digest && (
+                  <div className="card" style={{
+                    padding: 24,
+                    background: "linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(99, 102, 241, 0.08))",
+                    border: "1.5px solid rgba(16, 185, 129, 0.3)",
+                    borderRadius: 16
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                      <h2 style={{ fontSize: 16, fontWeight: 800, display: "flex", alignItems: "center", gap: 8, color: "var(--text-primary)" }}>
+                        <Sparkles size={18} style={{ color: "var(--emerald)" }} />
+                        Weekly Guardian Digest 🌟
+                      </h2>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 12, background: "var(--emerald-light)", color: "var(--emerald)" }}>
+                        Last {digest.period_days} Days
+                      </span>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                      <div style={{ background: "var(--bg-surface)", padding: 12, borderRadius: 12, border: "1px solid var(--border)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                          <Trophy size={14} style={{ color: "#f59e0b" }} />
+                          <span style={{ fontSize: 11, fontWeight: 800, color: "#d97706" }}>Celebrate Win</span>
+                        </div>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
+                          {digest.celebrate ? (
+                            <>Excels in <strong>{digest.celebrate}</strong></>
+                          ) : (
+                            "Steady study consistency!"
+                          )}
+                        </p>
+                      </div>
+
+                      <div style={{ background: "var(--bg-surface)", padding: 12, borderRadius: 12, border: "1px solid var(--border)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                          <Target size={14} style={{ color: "#6366f1" }} />
+                          <span style={{ fontSize: 11, fontWeight: 800, color: "#6366f1" }}>Upcoming Focus</span>
+                        </div>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
+                          {digest.focus_next ? (
+                            <>Practice: <strong>{digest.focus_next}</strong></>
+                          ) : (
+                            "Next curriculum chapter"
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div style={{
+                      background: "var(--bg-surface)",
+                      padding: "12px 14px",
+                      borderRadius: 12,
+                      borderLeft: "3.5px solid var(--emerald)",
+                      borderTop: "1px solid var(--border)",
+                      borderRight: "1px solid var(--border)",
+                      borderBottom: "1px solid var(--border)"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                        <Lightbulb size={13} style={{ color: "var(--emerald)" }} />
+                        <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--emerald)" }}>
+                          Tonight&apos;s Conversation Starter
+                        </span>
+                      </div>
+                      <p style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.45, margin: 0, fontStyle: "italic" }}>
+                        &ldquo;{digest.parent_action}&rdquo;
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Weekly Progress Digest Card */}
                 <div className="card" style={{ padding: 24 }}>
@@ -444,11 +544,11 @@ export default function ParentPage() {
                               background: "var(--bg-surface)",
                               borderRadius: 10,
                               fontStyle: "italic",
-                              borderLeft: "3px solid var(--emerald)",
-                              marginTop: 6
-                            }}>
-                              "{note.feedback_note}"
-                            </p>
+                                borderLeft: "3px solid var(--emerald)",
+                                marginTop: 6
+                              }}>
+                                &ldquo;{note.feedback_note}&rdquo;
+                              </p>
                           </div>
                         );
                       })}
@@ -519,7 +619,7 @@ export default function ParentPage() {
                     <div>
                       <h4 style={{ fontWeight: 800, fontSize: 13, color: "#d97706", marginBottom: 2 }}>Guidance Recommendation</h4>
                       <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4 }}>
-                        {report.user.name}'s overall mastery average is currently sitting at <strong>{Math.round(report.avg_quiz_pct)}%</strong>. 
+                        {report.user.name}&apos;s overall mastery average is currently sitting at <strong>{Math.round(report.avg_quiz_pct)}%</strong>. 
                         We recommend encouraging extra sessions using flashcards or prompting questions on weak subject areas like <strong>{report.user.weak_subject || "core topics"}</strong> within AI Sakhi.
                       </p>
                     </div>

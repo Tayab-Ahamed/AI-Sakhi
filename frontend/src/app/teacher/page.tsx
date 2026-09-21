@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
@@ -10,8 +10,29 @@ import { getSubjectsForClass, getTopicsForSubjectAndClass } from "@/lib/curricul
 import {
   Plus, Trash2, Users, BookOpen, CheckCircle2, Clock,
   ClipboardList, Download, ChevronDown, ChevronUp, BarChart2, AlertCircle,
-  Flame, Award, MessageSquare, Edit2, Check, X,
+  Flame, Edit2, Check, X, Filter,
 } from "lucide-react";
+
+type BankQuestion = {
+  id: number;
+  organization_id: number;
+  created_by: number;
+  board: string;
+  class_level: string;
+  subject: string;
+  chapter?: string;
+  learning_outcome?: string;
+  question_type: string;
+  difficulty: string;
+  question_text: string;
+  options: string[];
+  correct_answer: string;
+  explanation: string;
+  misconception_tag?: string;
+  status: "draft" | "approved" | "rejected";
+  created_at: string;
+  updated_at: string;
+};
 
 type Assignment = {
   id: number;
@@ -88,15 +109,151 @@ export default function TeacherPage() {
   const [savingEdit, setSavingEdit] = useState(false);
 
   // Form state
+  const defaultClass = user?.class_ || "8";
+  const initialSubjects = (getSubjectsForClass(defaultClass) || []) as unknown as string[];
+  const initialSubject = initialSubjects[0] || "Science";
+  const initialTopics = getTopicsForSubjectAndClass(initialSubject, defaultClass) || [];
+
   const [form, setForm] = useState({
-    title: "", subject: "", topic: "", difficulty: "medium",
-    class_: user?.class_ || "8", instructions: "", due_date: "",
+    title: "", subject: initialSubject, topic: initialTopics[0] || "", difficulty: "medium",
+    class_: defaultClass, instructions: "", due_date: "",
   });
-  const [subjects, setSubjects] = useState<string[]>([]);
-  const [topics, setTopics] = useState<string[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
+
+  const subjects = (getSubjectsForClass(form.class_) || []) as unknown as string[];
+  const topics = (form.subject && form.class_ ? getTopicsForSubjectAndClass(form.subject, form.class_) : []) as string[];
+
+  // Question Bank states
+  const [activeTab, setActiveTab] = useState<"assignments" | "question_bank">("assignments");
+  const [questionsList, setQuestionsList] = useState<BankQuestion[]>([]);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [questionStatusFilter, setQuestionStatusFilter] = useState<"all" | "draft" | "approved">("all");
+  const [questionSubjectFilter, setQuestionSubjectFilter] = useState<string>("");
+  const [showQuestionModal, setShowQuestionModal] = useState(false);
+  const [savingQuestion, setSavingQuestion] = useState(false);
+  const [questionFormError, setQuestionFormError] = useState("");
+  const [newQuestion, setNewQuestion] = useState({
+    board: "CBSE",
+    class_level: "8",
+    subject: "Science",
+    chapter: "",
+    learning_outcome: "",
+    question_type: "mcq",
+    difficulty: "medium",
+    question_text: "",
+    options: ["", "", "", ""],
+    correct_answer: "",
+    explanation: "",
+    misconception_tag: "",
+  });
+
+  const onClassChange = (c: string) => {
+    const s = (getSubjectsForClass(c) || []) as unknown as string[];
+    const firstSub = s[0] || "";
+    const t = firstSub ? getTopicsForSubjectAndClass(firstSub, c) : [];
+    setForm((f) => ({ ...f, class_: c, subject: firstSub, topic: t[0] || "" }));
+  };
+
+  const onSubjectChange = (subj: string) => {
+    const t = getTopicsForSubjectAndClass(subj, form.class_);
+    setForm((f) => ({ ...f, subject: subj, topic: t[0] || "" }));
+  };
+
+  const loadQuestionBank = async () => {
+    setLoadingQuestions(true);
+    try {
+      const res = await api.getQuestions(
+        questionStatusFilter === "all" ? undefined : questionStatusFilter,
+        questionSubjectFilter || undefined
+      );
+      setQuestionsList((res as { questions?: BankQuestion[] }).questions || []);
+    } catch {
+      setQuestionsList([]);
+    } finally {
+      setLoadingQuestions(false);
+    }
+  };
+
+  const handleCreateBankQuestion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newQuestion.question_text.trim() || !newQuestion.correct_answer.trim()) {
+      setQuestionFormError("Please enter question text and correct answer.");
+      return;
+    }
+    const cleanOptions = newQuestion.options.map((o) => o.trim()).filter(Boolean);
+    if (newQuestion.question_type === "mcq" && cleanOptions.length < 2) {
+      setQuestionFormError("MCQ questions require at least 2 options.");
+      return;
+    }
+    setSavingQuestion(true);
+    setQuestionFormError("");
+    try {
+      await api.createQuestion({
+        ...newQuestion,
+        options: cleanOptions,
+      });
+      setShowQuestionModal(false);
+      setNewQuestion({
+        board: "CBSE",
+        class_level: "8",
+        subject: "Science",
+        chapter: "",
+        learning_outcome: "",
+        question_type: "mcq",
+        difficulty: "medium",
+        question_text: "",
+        options: ["", "", "", ""],
+        correct_answer: "",
+        explanation: "",
+        misconception_tag: "",
+      });
+      await loadQuestionBank();
+    } catch (err) {
+      setQuestionFormError(err instanceof Error ? err.message : "Failed to create question");
+    } finally {
+      setSavingQuestion(false);
+    }
+  };
+
+  const handleReviewQuestion = async (questionId: number, status: "approved" | "rejected") => {
+    try {
+      await api.reviewQuestion(questionId, status, `Reviewed by teacher ${user?.name || ""}`);
+      await loadQuestionBank();
+    } catch {
+      alert("Could not update question status.");
+    }
+  };
+
+  const loadTeacherData = async () => {
+    if (!user?.user_id || !["teacher", "admin"].includes(user.role || "")) return;
+    await Promise.resolve();
+    setLoading(true);
+    try {
+      const orgId = user.organization_id || 1;
+      const [assignData, analyticsData, rosterData, qData] = await Promise.all([
+        api.listAssignments({ teacher_id: user.user_id }),
+        api.getClassAnalytics(orgId),
+        api.getOrganizationRoster(orgId),
+        api.getQuestions().catch(() => ({ questions: [] })),
+      ]);
+      setAssignments(assignData as unknown as Assignment[]);
+      setAnalytics(analyticsData as {
+        quiz_average: number;
+        completion_rate: number;
+        struggling_count: number;
+        active_assignments: number;
+        total_students: number;
+      });
+      setRoster((rosterData as { roster?: typeof roster }).roster || []);
+      setQuestionsList((qData as { questions?: BankQuestion[] }).questions || []);
+    } catch {
+      setAssignments([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (isReady && !user) router.push("/onboard");
@@ -107,47 +264,21 @@ export default function TeacherPage() {
 
   useEffect(() => {
     if (!user?.user_id || !["teacher", "admin"].includes(user.role || "")) return;
-    void loadTeacherData();
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (!cancelled) void loadTeacherData();
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.user_id, user?.role, user?.organization_id]);
-
-  useEffect(() => {
-    const s = getSubjectsForClass(form.class_) as unknown as string[];
-    setSubjects(s);
-    if (!s.includes(form.subject)) setForm((f) => ({ ...f, subject: s[0] || "", topic: "" }));
-  }, [form.class_]);
-
-  useEffect(() => {
-    if (!form.subject || !form.class_) { setTopics([]); return; }
-    const t = getTopicsForSubjectAndClass(form.subject, form.class_);
-    setTopics(t);
-    if (!t.includes(form.topic)) setForm((f) => ({ ...f, topic: t[0] || "" }));
-  }, [form.subject, form.class_]);
-
-  const loadTeacherData = async () => {
-    if (!user?.user_id || !["teacher", "admin"].includes(user.role || "")) return;
-    setLoading(true);
-    try {
-      const orgId = user.organization_id || 1;
-      const [assignData, analyticsData, rosterData] = await Promise.all([
-        api.listAssignments({ teacher_id: user.user_id }),
-        api.getClassAnalytics(orgId),
-        api.getOrganizationRoster(orgId),
-      ]);
-      setAssignments(assignData as unknown as Assignment[]);
-      setAnalytics(analyticsData as any);
-      setRoster((rosterData as any).roster || []);
-    } catch {
-      setAssignments([]);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSaveFeedback = async (submissionId: number, assignmentId: number) => {
     if (!feedbackText.trim()) return;
     setSavingFeedback(true);
     try {
-      const updated = await api.updateSubmissionFeedback(submissionId, feedbackText) as any;
+      const updated = await api.updateSubmissionFeedback(submissionId, feedbackText) as { feedback_note?: string };
       setSubmissions((prev) => {
         const list = prev[assignmentId] || [];
         return {
@@ -283,7 +414,6 @@ export default function TeacherPage() {
     }
   };
 
-  const totalStudents  = assignments.reduce((s, a) => Math.max(s, a.submission_count), 0);
   const totalCompleted = assignments.reduce((s, a) => s + (a.completed_count || 0), 0);
   const pendingCount   = assignments.filter((a) => !a.is_overdue).length;
   const overdueCount   = assignments.filter((a) => a.is_overdue).length;
@@ -323,21 +453,50 @@ export default function TeacherPage() {
               </p>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={handleExportReport}
-                disabled={generatingReport}
-              >
-                <Download size={14} />
-                {generatingReport ? "Generating…" : "Export Report"}
-              </button>
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={() => { setShowForm((v) => !v); setFormError(""); setFormSuccess(""); }}
-              >
-                <Plus size={14} /> New Assignment
-              </button>
+              {activeTab === "assignments" ? (
+                <>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleExportReport}
+                    disabled={generatingReport}
+                  >
+                    <Download size={14} />
+                    {generatingReport ? "Generating…" : "Export Report"}
+                  </button>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => { setShowForm((v) => !v); setFormError(""); setFormSuccess(""); }}
+                  >
+                    <Plus size={14} /> New Assignment
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => { setShowQuestionModal(true); setQuestionFormError(""); }}
+                >
+                  <Plus size={14} /> Add NCERT Question
+                </button>
+              )}
             </div>
+          </div>
+
+          {/* Tabs */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 24, borderBottom: "1px solid var(--border)", paddingBottom: 10 }}>
+            <button
+              onClick={() => setActiveTab("assignments")}
+              className={`btn btn-sm ${activeTab === "assignments" ? "btn-primary" : "btn-secondary"}`}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            >
+              <ClipboardList size={14} /> Assignments & Insights
+            </button>
+            <button
+              onClick={() => { setActiveTab("question_bank"); void loadQuestionBank(); }}
+              className={`btn btn-sm ${activeTab === "question_bank" ? "btn-primary" : "btn-secondary"}`}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            >
+              <BookOpen size={14} /> Curriculum Question Bank ({questionsList.length})
+            </button>
           </div>
 
           {/* ── Edit Assignment Modal ─────────────────────────────── */}
@@ -406,7 +565,130 @@ export default function TeacherPage() {
             )}
           </AnimatePresence>
 
-          {/* Stat row */}
+          {/* ── New Question Modal ─────────────────────────────── */}
+          <AnimatePresence>
+            {showQuestionModal && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
+                onClick={(e) => { if (e.target === e.currentTarget) setShowQuestionModal(false); }}
+              >
+                <motion.div
+                  initial={{ scale: 0.95, y: 16, opacity: 0 }}
+                  animate={{ scale: 1, y: 0, opacity: 1 }}
+                  exit={{ scale: 0.95, y: 16, opacity: 0 }}
+                  className="card"
+                  style={{ width: "100%", maxWidth: 600, padding: 28, maxHeight: "90vh", overflowY: "auto", boxShadow: "var(--shadow-lg)" }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+                    <h2 style={{ fontSize: 17, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>Add Curriculum Question</h2>
+                    <button onClick={() => setShowQuestionModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}>
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  {questionFormError && (
+                    <div style={{ padding: "8px 12px", background: "#fee2e2", color: "#991b1b", borderRadius: 6, fontSize: 12, marginBottom: 14 }}>
+                      {questionFormError}
+                    </div>
+                  )}
+
+                  <form onSubmit={(e) => void handleCreateBankQuestion(e)}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Board</label>
+                        <select className="input" value={newQuestion.board} onChange={(e) => setNewQuestion(q => ({ ...q, board: e.target.value }))}>
+                          <option value="CBSE">CBSE / NCERT</option>
+                          <option value="ICSE">ICSE</option>
+                          <option value="State Board">State Board</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Class Level</label>
+                        <select className="input" value={newQuestion.class_level} onChange={(e) => setNewQuestion(q => ({ ...q, class_level: e.target.value }))}>
+                          {["6","7","8","9","10","11","12"].map(c => <option key={c} value={c}>Class {c}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Difficulty</label>
+                        <select className="input" value={newQuestion.difficulty} onChange={(e) => setNewQuestion(q => ({ ...q, difficulty: e.target.value }))}>
+                          <option value="easy">Easy</option>
+                          <option value="medium">Medium</option>
+                          <option value="hard">Hard</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Subject *</label>
+                        <input className="input" value={newQuestion.subject} onChange={(e) => setNewQuestion(q => ({ ...q, subject: e.target.value }))} placeholder="Science" required />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Chapter</label>
+                        <input className="input" value={newQuestion.chapter} onChange={(e) => setNewQuestion(q => ({ ...q, chapter: e.target.value }))} placeholder="Light & Reflection" />
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Question Text *</label>
+                      <textarea className="input" rows={3} value={newQuestion.question_text} onChange={(e) => setNewQuestion(q => ({ ...q, question_text: e.target.value }))} placeholder="Enter question..." required />
+                    </div>
+
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 6 }}>Options (for MCQ)</label>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        {newQuestion.options.map((opt, idx) => (
+                          <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700 }}>{String.fromCharCode(65 + idx)}:</span>
+                            <input
+                              className="input"
+                              value={opt}
+                              onChange={(e) => {
+                                const copy = [...newQuestion.options];
+                                copy[idx] = e.target.value;
+                                setNewQuestion(q => ({ ...q, options: copy }));
+                              }}
+                              placeholder={`Option ${String.fromCharCode(65 + idx)}`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Correct Answer *</label>
+                        <input className="input" value={newQuestion.correct_answer} onChange={(e) => setNewQuestion(q => ({ ...q, correct_answer: e.target.value }))} placeholder="A or exact answer" required />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Misconception Tag (Optional)</label>
+                        <input className="input" value={newQuestion.misconception_tag} onChange={(e) => setNewQuestion(q => ({ ...q, misconception_tag: e.target.value }))} placeholder="formula_confusion" />
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Explanation</label>
+                      <textarea className="input" rows={2} value={newQuestion.explanation} onChange={(e) => setNewQuestion(q => ({ ...q, explanation: e.target.value }))} placeholder="Step-by-step reasoning for the correct answer..." />
+                    </div>
+
+                    <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowQuestionModal(false)}>Cancel</button>
+                      <button type="submit" className="btn btn-primary btn-sm" disabled={savingQuestion}>
+                        {savingQuestion ? "Saving…" : <><Check size={13} /> Save for Review</>}
+                      </button>
+                    </div>
+                  </form>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {activeTab === "assignments" ? (
+            <>
+              {/* Stat row */}
           {/* Class Analytics Panel */}
           {analytics && (
             <div style={{ marginBottom: 28 }}>
@@ -514,14 +796,14 @@ export default function TeacherPage() {
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", display: "block", marginBottom: 4 }}>Class</label>
                       <select className="input input-select" value={form.class_}
-                        onChange={(e) => setForm((f) => ({ ...f, class_: e.target.value }))}>
+                        onChange={(e) => onClassChange(e.target.value)}>
                         {["6","7","8","9","10","11","12"].map((c) => <option key={c} value={c}>Class {c}</option>)}
                       </select>
                     </div>
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", display: "block", marginBottom: 4 }}>Subject</label>
                       <select className="input input-select" value={form.subject}
-                        onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))}>
+                        onChange={(e) => onSubjectChange(e.target.value)}>
                         {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
@@ -858,6 +1140,185 @@ export default function TeacherPage() {
               </div>
             )}
           </div>
+        </>
+      ) : (
+        <div>
+          {/* Question Bank Filter Toolbar */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, gap: 12, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)" }}>Status:</span>
+              {(["all", "draft", "approved"] as const).map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setQuestionStatusFilter(st)}
+                  className={`btn btn-sm ${questionStatusFilter === st ? "btn-primary" : "btn-secondary"}`}
+                  style={{ fontSize: 12, padding: "5px 12px", textTransform: "capitalize" }}
+                >
+                  {st === "all" ? "All Questions" : st === "draft" ? "Pending Review" : "Approved"}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <Filter size={14} style={{ color: "var(--text-muted)" }} />
+              <select
+                className="input input-select"
+                value={questionSubjectFilter}
+                onChange={(e) => setQuestionSubjectFilter(e.target.value)}
+                style={{ fontSize: 12, padding: "4px 12px", width: "auto" }}
+              >
+                <option value="">All Subjects</option>
+                {["Science", "Mathematics", "Social Studies", "English", "Hindi"].map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => void loadQuestionBank()}
+                disabled={loadingQuestions}
+              >
+                {loadingQuestions ? "Refreshing…" : "Refresh"}
+              </button>
+            </div>
+          </div>
+
+          {/* Questions List */}
+          {loadingQuestions ? (
+            <div style={{ textAlign: "center", padding: 60 }}>
+              <div style={{ width: 28, height: 28, border: "3px solid #e5e7eb", borderTopColor: "var(--emerald)", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto 12px" }} />
+              <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Loading questions from bank...</p>
+            </div>
+          ) : questionsList.length === 0 ? (
+            <div className="card" style={{ padding: 48, textAlign: "center", border: "1px dashed var(--border)" }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>📚</div>
+              <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>No Questions Found</h3>
+              <p style={{ fontSize: 13, color: "var(--text-secondary)", maxWidth: 420, margin: "0 auto 16px" }}>
+                No curriculum questions match your current filters. Add your first verified NCERT question to enrich the school bank.
+              </p>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => { setShowQuestionModal(true); setQuestionFormError(""); }}
+              >
+                <Plus size={14} /> Add First Question
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {questionsList
+                .filter(q => questionStatusFilter === "all" || q.status === questionStatusFilter)
+                .filter(q => !questionSubjectFilter || q.subject === questionSubjectFilter)
+                .map((q) => (
+                  <div
+                    key={q.id}
+                    className="card"
+                    style={{
+                      padding: 20,
+                      borderLeft: `4px solid ${q.status === "approved" ? "#059669" : "#f59e0b"}`,
+                      boxShadow: "var(--shadow-sm)",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10, gap: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                          padding: "2px 8px",
+                          borderRadius: 4,
+                          background: q.status === "approved" ? "#ecfdf5" : "#fef3c7",
+                          color: q.status === "approved" ? "#059669" : "#d97706",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}>
+                          {q.status === "approved" ? "✓ Approved" : "⏳ Pending Review"}
+                        </span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)" }}>
+                          {q.board} · Class {q.class_level} · {q.subject} {q.chapter ? `· ${q.chapter}` : ""}
+                        </span>
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                          padding: "2px 6px",
+                          borderRadius: 4,
+                          background: q.difficulty === "hard" ? "#fee2e2" : q.difficulty === "medium" ? "#fef3c7" : "#d1fae5",
+                          color: q.difficulty === "hard" ? "#991b1b" : q.difficulty === "medium" ? "#92400e" : "#065f46",
+                        }}>
+                          {q.difficulty}
+                        </span>
+                      </div>
+                      {q.status === "draft" && (
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button
+                            className="btn btn-sm"
+                            style={{ background: "#059669", color: "white", padding: "3px 10px", fontSize: 11, fontWeight: 700 }}
+                            onClick={() => void handleReviewQuestion(q.id, "approved")}
+                          >
+                            <Check size={12} /> Approve
+                          </button>
+                          <button
+                            className="btn btn-sm btn-ghost"
+                            style={{ color: "#ef4444", padding: "3px 8px", fontSize: 11 }}
+                            onClick={() => void handleReviewQuestion(q.id, "rejected")}
+                          >
+                            <X size={12} /> Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", marginBottom: 12, lineHeight: 1.5 }}>
+                      {q.question_text}
+                    </div>
+
+                    {q.options && q.options.length > 0 && (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                        {q.options.map((opt, oIdx) => {
+                          const optLetter = String.fromCharCode(65 + oIdx);
+                          const isCorrect = q.correct_answer === optLetter || q.correct_answer === opt;
+                          return (
+                            <div
+                              key={oIdx}
+                              style={{
+                                fontSize: 12,
+                                padding: "6px 10px",
+                                borderRadius: 6,
+                                background: isCorrect ? "#ecfdf5" : "var(--bg-surface)",
+                                border: `1px solid ${isCorrect ? "#10b981" : "var(--border)"}`,
+                                color: isCorrect ? "#065f46" : "var(--text-secondary)",
+                                fontWeight: isCorrect ? 700 : 500,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                              }}
+                            >
+                              <span>{optLetter}.</span>
+                              <span>{opt}</span>
+                              {isCorrect && <Check size={12} style={{ marginLeft: "auto", color: "#059669" }} />}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {q.explanation && (
+                      <div style={{ fontSize: 12, color: "var(--text-secondary)", background: "var(--bg-sidebar)", padding: "8px 12px", borderRadius: 6, marginBottom: 6 }}>
+                        <strong>Explanation:</strong> {q.explanation}
+                      </div>
+                    )}
+
+                    {q.misconception_tag && (
+                      <div style={{ fontSize: 11, color: "#b45309", marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
+                        <AlertCircle size={12} />
+                        <span>Targeted Misconception: <em>{q.misconception_tag}</em></span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
         </div>
       </main>
     </div>

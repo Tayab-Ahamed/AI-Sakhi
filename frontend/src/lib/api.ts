@@ -202,6 +202,12 @@ export const api = {
   evaluateAnswer: (data: { question: object; user_answer: string; language?: string; user_id?: number }) =>
     apiFetch("/quiz/evaluate", { method: "POST", body: JSON.stringify(data) }),
 
+  evaluateQuizBatch: (data: {
+    user_id: number;
+    topic: string;
+    items: Array<{ question: object; user_answer: string; language?: string }>;
+  }) => apiFetch("/quiz/evaluate-batch", { method: "POST", body: JSON.stringify(data) }),
+
   // ── Study Plan ─────────────────────────────────────────────────────────────
   generateStudyPlan: (data: { topic: string; subject: string; class_: string; language?: string; user_id?: number }) =>
     apiFetch("/study-plan", { method: "POST", body: JSON.stringify(data) }),

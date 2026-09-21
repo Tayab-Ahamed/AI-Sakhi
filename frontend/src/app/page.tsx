@@ -87,7 +87,7 @@ export default function Home() {
         <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: "easeOut" }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 16px", borderRadius: 99, background: "#111", border: "1px solid #222", marginBottom: 28 }}>
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#059669", boxShadow: "0 0 8px #059669" }} />
-            <span style={{ fontSize: 12, color: "#aaa", fontWeight: 600, letterSpacing: "0.05em" }}>INDIA'S AI LEARNING COMPANION</span>
+            <span style={{ fontSize: 12, color: "#aaa", fontWeight: 600, letterSpacing: "0.05em" }}>INDIA&apos;S AI LEARNING COMPANION</span>
           </div>
           <h1 style={{ fontSize: "clamp(32px, 6vw, 60px)", fontWeight: 900, color: "white", letterSpacing: "-1.5px", lineHeight: 1.1, marginBottom: 20 }}>
             Learn smarter.<br />

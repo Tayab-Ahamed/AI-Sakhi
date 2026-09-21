@@ -7,11 +7,7 @@ from __future__ import annotations
 import json
 import re
 
-from groq import Groq
-
-from backend.config import GROQ_API_KEY, GROQ_MODEL
-
-client = Groq(api_key=GROQ_API_KEY)
+from backend.llm import complete
 
 
 def generate_practice_paper(
@@ -93,13 +89,13 @@ All questions must be NCERT-aligned and appropriate for Class {class_}.
 Return ONLY the JSON object, no markdown, no explanation."""
 
     try:
-        response = client.chat.completions.create(
-            model=GROQ_MODEL,
+        res = complete(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=3000,
             temperature=0.4,
+            tag="practice_paper_gen",
         )
-        raw = response.choices[0].message.content.strip()
+        raw = res.text.strip()
         # Strip markdown code fences if present
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```$", "", raw)

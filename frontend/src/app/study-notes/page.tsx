@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Sidebar from "@/components/Sidebar";
 import { api } from "@/lib/api";
@@ -34,44 +34,42 @@ function renderMd(md: string): React.ReactNode[] {
         {renderInline(line.slice(2))}
       </li>
     );
-    if (line.trim() === "") return <div key={i} style={{ height: 6 }} />;
-    return <p key={i} style={{ fontSize: 14, lineHeight: 1.75, color: "var(--text-secondary)", margin: "4px 0" }}>{renderInline(line)}</p>;
+    if (!line.trim()) return <div key={i} style={{ height: 8 }} />;
+    return <p key={i} style={{ fontSize: 14, lineHeight: 1.7, margin: "6px 0", color: "var(--text-primary)" }}>{renderInline(line)}</p>;
   });
 }
 
 // Render bold (**text**) inline
 function renderInline(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*.+?\*\*)/);
-  return <>{parts.map((p, i) =>
-    p.startsWith("**") && p.endsWith("**")
-      ? <strong key={i} style={{ color: "var(--text-primary)" }}>{p.slice(2, -2)}</strong>
-      : p
-  )}</>;
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((p, i) => {
+    if (p.startsWith("**") && p.endsWith("**")) {
+      return <strong key={i} style={{ fontWeight: 700, color: "var(--text-primary)" }}>{p.slice(2, -2)}</strong>;
+    }
+    return p;
+  });
 }
 
 export default function StudyNotesPage() {
   const { user } = useUser();
-  const [subjects] = useState(() => user ? getSubjectsForClass(user.class_) : []);
-  const [selectedSub, setSelectedSub] = useState(() => (subjects[0] as { id: string })?.id || "");
-  const [topics, setTopics] = useState<string[]>(() => user && subjects[0] ? getTopicsForSubjectAndClass((subjects[0] as { id: string }).id, user.class_) : []);
-  const [topic, setTopic] = useState(() => topics[0] || "");
+  const subjects = useMemo(() => (user ? getSubjectsForClass(user.class_) : []), [user]);
+  const [selectedSubState, setSelectedSubState] = useState<string>("");
+  const selectedSub = selectedSubState || (subjects[0] as { id: string })?.id || "";
+
+  const topics = useMemo(() => getTopicsForSubjectAndClass(selectedSub, user?.class_ || "8"), [selectedSub, user?.class_]);
+  const [topicState, setTopicState] = useState<string>("");
+  const topic = topicState || topics[0] || "";
+
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notes, setNotes] = useState<string>("");
   const [noteTopic, setNoteTopic] = useState("");
   const [saved, setSaved] = useState(false);
-  const [savedNotes, setSavedNotes] = useState<SavedNote[]>([]);
+  const [savedNotes, setSavedNotes] = useState<SavedNote[]>(() => {
+    if (typeof window === "undefined") return [];
+    return loadSavedNotes();
+  });
   const [activeTab, setActiveTab] = useState<"generate" | "saved">("generate");
-
-  useEffect(() => {
-    setSavedNotes(loadSavedNotes());
-  }, []);
-
-  useEffect(() => {
-    const t = getTopicsForSubjectAndClass(selectedSub, user?.class_ || "8");
-    setTopics(t);
-    setTopic(t[0] || "");
-  }, [selectedSub, user?.class_]);
 
   const handleGenerate = async () => {
     if (!topic.trim() || !user) return;
@@ -153,13 +151,13 @@ export default function StudyNotesPage() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
                   <div>
                     <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Subject</label>
-                    <select className="input input-select" value={selectedSub} onChange={(e) => setSelectedSub(e.target.value)}>
+                    <select className="input input-select" value={selectedSub} onChange={(e) => { setSelectedSubState(e.target.value); setTopicState(""); }}>
                       {subjects.map((s) => <option key={(s as { id: string }).id} value={(s as { id: string }).id}>{(s as { label?: string }).label || (s as { id: string }).id}</option>)}
                     </select>
                   </div>
                   <div style={{ gridColumn: "2/-1" }}>
                     <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Topic</label>
-                    <select className="input input-select" value={topic} onChange={(e) => setTopic(e.target.value)}>
+                    <select className="input input-select" value={topic} onChange={(e) => setTopicState(e.target.value)}>
                       {topics.map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>

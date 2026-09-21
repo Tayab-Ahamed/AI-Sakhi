@@ -2,6 +2,7 @@
 
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RefreshCw, Home } from "lucide-react";
+import { logger } from "@/lib/logger";
 
 interface Props {
   children: ReactNode;
@@ -25,8 +26,6 @@ export class ErrorBoundary extends Component<Props, State> {
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error intercepted by UI boundary:", error, errorInfo);
     try {
-      // Lazy load custom logger to avoid boot race conditions
-      const { logger } = require("@/lib/logger");
       logger.error("UI Boundary Crash", error, { componentStack: errorInfo.componentStack });
     } catch {
       // Fallback

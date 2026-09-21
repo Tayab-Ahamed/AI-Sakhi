@@ -112,7 +112,7 @@ function FocusTimerPageContent() {
       if (intervalRef.current) clearInterval(intervalRef.current);
     }
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [running, modeIdx, notifGranted, studyTopic]);
+  }, [running, modeIdx, notifGranted, studyTopic, user?.user_id]);
 
   // Rotate tips every 30 seconds while running
   useEffect(() => {

@@ -10,7 +10,7 @@ import { motion } from "framer-motion";
 import Sidebar from "@/components/Sidebar";
 import { api } from "@/lib/api";
 import { useUser } from "@/lib/user-context";
-import { Download, FileText, BarChart2, Flame, Trophy, AlertCircle } from "lucide-react";
+import { Download, FileText, AlertCircle } from "lucide-react";
 
 type ReportData = {
   user: { name: string; class_: string; weak_subject: string };
@@ -222,11 +222,11 @@ export default function ExportPage() {
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
                   {[
-                    { label: "Streak",   value: `${preview.streak}🔥`, icon: Flame },
-                    { label: "Avg Score", value: preview.avg_quiz_pct != null ? `${preview.avg_quiz_pct}%` : "–", icon: BarChart2 },
-                    { label: "Quizzes",   value: preview.total_quizzes, icon: Trophy },
-                    { label: "Flashcards", value: preview.flashcard_stats?.total ?? 0, icon: FileText },
-                  ].map(({ label, value, icon: Icon }) => (
+                    { label: "Streak",   value: `${preview.streak}🔥` },
+                    { label: "Avg Score", value: preview.avg_quiz_pct != null ? `${preview.avg_quiz_pct}%` : "–" },
+                    { label: "Quizzes",   value: preview.total_quizzes },
+                    { label: "Flashcards", value: preview.flashcard_stats?.total ?? 0 },
+                  ].map(({ label, value }) => (
                     <div key={label} style={{ background: "#f0fdf4", borderRadius: 12, padding: "12px 14px" }}>
                       <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>{label}</div>
                       <div style={{ fontSize: 20, fontWeight: 800, color: "var(--emerald)" }}>{value}</div>
@@ -255,7 +255,7 @@ export default function ExportPage() {
 
               <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-muted)" }}>
                 <AlertCircle size={13} />
-                Report generated at {new Date(preview.generated_at).toLocaleTimeString("en-IN")}. Click "Download PDF" for the full formatted report.
+                Report generated at {new Date(preview.generated_at).toLocaleTimeString("en-IN")}. Click &quot;Download PDF&quot; for the full formatted report.
               </div>
             </motion.div>
           )}

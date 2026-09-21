@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 
 import Sidebar from "@/components/Sidebar";
 import TourGuide from "@/components/TourGuide";
@@ -166,7 +168,7 @@ function TypingIndicator() {
 function AiBubble({ text }: { text: string }) {
   return (
     <div className="bubble bubble-ai markdown-body">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{text}</ReactMarkdown>
     </div>
   );
 }
@@ -212,14 +214,6 @@ const PREVIEW_CATALOG: RagCatalog = {
   ],
   sources: [],
 };
-
-function compactFilters(filters: RagFilters) {
-  const next: Partial<RagFilters> = {};
-  if (filters.class_level) next.class_level = filters.class_level;
-  if (filters.subject) next.subject = filters.subject;
-  if (filters.chapter) next.chapter = filters.chapter;
-  return next;
-}
 
 export default function ChatPage() {
   const router = useRouter();
@@ -914,7 +908,7 @@ export default function ChatPage() {
                           <AiBubble text={msg.text} />
                         ) : (
                           <div className="bubble bubble-user">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
+                            <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{msg.text}</ReactMarkdown>
                           </div>
                         )}
                         {msg.role === "ai" && (msg.citations || []).length > 0 && (

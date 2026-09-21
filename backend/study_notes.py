@@ -7,9 +7,7 @@ from __future__ import annotations
 
 import os
 
-from groq import Groq
-
-from backend.config import GROQ_MODEL
+from backend.llm import complete
 from backend.language import is_text_compatible_with_language, normalize_language
 
 NOTE_SYSTEM_PROMPT = """You are Sakhi, a patient and knowledgeable tutor for Indian students (KG to Class 12).
@@ -50,7 +48,6 @@ def generate_study_notes(
     Returns the raw markdown string. Raises on error.
     Includes language validation retry loop.
     """
-    client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
     selected_language = normalize_language(language)
     subject_hint = f" (Subject: {subject})" if subject else ""
     lang_note = f" Respond in {selected_language}." if selected_language.lower() != "english" else ""
@@ -61,13 +58,13 @@ def generate_study_notes(
         {"role": "user", "content": user_msg},
     ]
 
-    resp = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=messages,
+    result = complete(
+        messages,
         temperature=0.4,
         max_tokens=1800,
+        tag="study_notes_gen",
     )
-    notes = resp.choices[0].message.content or ""
+    notes = result.text or ""
 
     # Language validation retry (same pattern as quiz.py)
     if selected_language.lower() != "english" and not is_text_compatible_with_language(notes, selected_language):
@@ -82,12 +79,13 @@ def generate_study_notes(
                 ),
             },
         ]
-        retry_resp = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=retry_messages,
+        retry_result = complete(
+            retry_messages,
             temperature=0.4,
             max_tokens=1800,
+            tag="study_notes_lang_retry",
         )
-        notes = retry_resp.choices[0].message.content or notes
+        notes = retry_result.text or notes
 
     return notes
+

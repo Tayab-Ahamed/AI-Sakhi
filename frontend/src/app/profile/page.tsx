@@ -5,31 +5,51 @@ import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import XPBar from "@/components/XPBar";
 import { useUser } from "@/lib/user-context";
+import { SakhiLanguage } from "@/lib/user";
 import { Edit2, Check, X } from "lucide-react";
 import { api } from "@/lib/api";
 
 const LANGUAGES = ["English", "Hinglish", "Hindi", "Kannada", "Tamil"];
 
+type ProgressItem = {
+  topic: string;
+  score: number;
+  total: number;
+  timestamp?: string;
+};
+
 export default function ProfilePage() {
   const { user, updateProfile, isReady } = useUser();
   const router = useRouter();
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ name: "", language: "English", weak_subject: "" });
-  const [progress, setProgress] = useState<{ streak: number; history: any[] }>({ streak: 0, history: [] });
+  const [form, setForm] = useState(() => ({
+    name: user?.name || "",
+    language: user?.language || "English",
+    weak_subject: user?.weak_subject || "",
+  }));
+  const [progress, setProgress] = useState<{ streak: number; history: ProgressItem[] }>({ streak: 0, history: [] });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (isReady && !user) router.push("/onboard");
     if (user) {
-      setForm({ name: user.name, language: user.language || "English", weak_subject: user.weak_subject || "" });
-      api.getProgress(user.user_id).then((d: any) => setProgress(d)).catch(() => {});
+      let ignore = false;
+      api.getProgress(user.user_id)
+        .then((d) => {
+          if (!ignore && d) {
+            const res = d as { streak?: number; history?: ProgressItem[] };
+            setProgress({ streak: res.streak || 0, history: res.history || [] });
+          }
+        })
+        .catch(() => {});
+      return () => { ignore = true; };
     }
   }, [user, isReady, router]);
 
   if (!user) return null;
 
   const avgScore = progress.history.length
-    ? Math.round(progress.history.reduce((s: number, r: any) => s + (r.score / r.total) * 100, 0) / progress.history.length)
+    ? Math.round(progress.history.reduce((s: number, r: ProgressItem) => s + (r.score / r.total) * 100, 0) / progress.history.length)
     : 0;
 
   const initials = user.name.split(" ").map((w: string) => w[0]).slice(0, 2).join("").toUpperCase();
@@ -37,7 +57,7 @@ export default function ProfilePage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateProfile(form as any);
+      await updateProfile(form);
       setEditing(false);
     } catch {
       alert("Could not save changes.");
@@ -85,7 +105,7 @@ export default function ProfilePage() {
                 </div>
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Preferred Language</label>
-                  <select className="input" value={form.language} onChange={(e) => setForm(f => ({ ...f, language: e.target.value }))} style={{ cursor: "pointer" }}>
+                  <select className="input" value={form.language} onChange={(e) => setForm(f => ({ ...f, language: e.target.value as SakhiLanguage }))} style={{ cursor: "pointer" }}>
                     {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
                   </select>
                 </div>

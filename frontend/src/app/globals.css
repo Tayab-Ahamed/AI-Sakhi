@@ -883,8 +883,24 @@ html, body { height: 100%; }
   min-width: 0;
 }
 
+.mobile-hamburger-btn {
+  display: none;
+}
+
+.mobile-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 999;
+  backdrop-filter: blur(2px);
+}
+
 /* ── Mobile Responsive — Sidebar Collapse ── */
 @media (max-width: 768px) {
+  .mobile-hamburger-btn {
+    display: flex !important;
+  }
+
   .sidebar {
     position: fixed;
     top: 0;

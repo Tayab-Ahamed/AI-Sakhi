@@ -7,6 +7,7 @@ import {
   MessageSquare, Zap, LayoutDashboard, BookOpen, Plus, LogOut, Globe,
   Timer, Trophy, Layers3, GraduationCap, Users, Shield, FileText,
   FileDown, Moon, Sun, User, BarChart2, ClipboardList, Settings, Target,
+  Menu, X,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -74,7 +75,13 @@ export default function Sidebar() {
   const router = useRouter();
   const [ragReady, setRagReady] = useState<boolean | null>(null);
   const [ragChunks, setRagChunks] = useState(0);
-  const [theme, setThemeState] = useState<Theme>("light");
+  const [theme, setThemeState] = useState<Theme>(() => typeof window !== "undefined" ? getTheme() : "light");
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [prevPath, setPrevPath] = useState(path);
+  if (prevPath !== path) {
+    setPrevPath(path);
+    setMobileOpen(false);
+  }
   const { user, updateProfile, clearUser } = useUser();
   const { dyslexiaMode, toggleDyslexia, fontSize, setFontSize } = useAccessibility();
 
@@ -85,7 +92,6 @@ export default function Sidebar() {
 
   useEffect(() => {
     initTheme();
-    setThemeState(getTheme());
   }, []);
 
   useEffect(() => {
@@ -127,13 +133,61 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="sidebar" style={{ overflowY: "auto" }}>
+    <>
+      {/* Mobile hamburger button */}
+      <button
+        type="button"
+        aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
+        onClick={() => setMobileOpen((v) => !v)}
+        className="mobile-hamburger-btn"
+        style={{
+          position: "fixed",
+          top: 14,
+          left: 14,
+          zIndex: 1100,
+          width: 40,
+          height: 40,
+          borderRadius: 10,
+          background: "var(--bg-surface)",
+          border: "1px solid var(--border)",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+          cursor: "pointer",
+          color: "var(--text-primary)"
+        }}
+      >
+        {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+      </button>
 
-      {/* ── Logo ── */}
-      <div className="sidebar-logo">
-        <span style={{ fontSize: 22 }}>🌸</span>
-        <span>AI Sakhi</span>
-      </div>
+      {/* Mobile drawer backdrop */}
+      {mobileOpen && (
+        <div
+          role="presentation"
+          className="mobile-drawer-backdrop"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      <aside className={`sidebar ${mobileOpen ? "open" : ""}`} style={{ overflowY: "auto" }}>
+
+        {/* ── Logo ── */}
+        <div className="sidebar-logo" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 22 }}>🌸</span>
+            <span>AI Sakhi</span>
+          </div>
+          {mobileOpen && (
+            <button
+              type="button"
+              aria-label="Close navigation"
+              onClick={() => setMobileOpen(false)}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}
+            >
+              <X size={18} />
+            </button>
+          )}
+        </div>
 
       {/* ── Role Badge + User Info ── */}
       {user && (
@@ -174,7 +228,7 @@ export default function Sidebar() {
       <div className="sidebar-section-label">Navigation</div>
       <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {navItems.map(({ href, icon: Icon, label }) => (
-          <Link key={href} href={href} className={`nav-item ${path === href ? "active" : ""}`}
+          <Link key={href} href={href} onClick={() => setMobileOpen(false)} className={`nav-item ${path === href ? "active" : ""}`}
             style={path === href ? { background: accent + "18", color: accent, borderLeft: `3px solid ${accent}` } : {}}>
             <Icon size={16} />
             {label}
@@ -264,7 +318,7 @@ export default function Sidebar() {
       {/* ── Bottom actions ── */}
       <div className="sidebar-bottom" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
-          <Link href="/profile" className={`nav-item ${path === "/profile" ? "active" : ""}`} style={{ flex: 1 }}>
+          <Link href="/profile" onClick={() => setMobileOpen(false)} className={`nav-item ${path === "/profile" ? "active" : ""}`} style={{ flex: 1 }}>
             <User size={15} /> Profile
           </Link>
           <NotificationCenter />
@@ -274,5 +328,6 @@ export default function Sidebar() {
         </button>
       </div>
     </aside>
-  );
+  </>
+);
 }

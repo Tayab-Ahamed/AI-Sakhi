@@ -6,12 +6,8 @@ from __future__ import annotations
 import json
 import re
 
-from groq import Groq
-
-from backend.config import GROQ_API_KEY, GROQ_MODEL
+from backend.llm import complete
 from backend.language import is_text_compatible_with_language, language_instruction, normalize_language
-
-client = Groq(api_key=GROQ_API_KEY)
 
 PLAN_SYSTEM = (
     "You are a study plan creator for Indian school students. "
@@ -69,13 +65,13 @@ def generate_study_plan(topic: str, subject: str, class_: str = "8", language: s
         language_instruction=language_instruction(selected_language),
     )
     def _call(messages: list[dict]) -> dict:
-        resp = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=messages,
-            max_tokens=1400,
+        result = complete(
+            messages,
             temperature=0.6,
+            max_tokens=1400,
+            tag="study_plan_gen",
         )
-        raw = resp.choices[0].message.content.strip()
+        raw = result.text.strip()
         raw = re.sub(r"^```[a-z]*\n?", "", raw)
         raw = re.sub(r"\n?```$", "", raw)
         return json.loads(raw)

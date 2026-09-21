@@ -20,22 +20,17 @@ const INSTALL_DISMISSED_KEY = "sakhi_pwa_install_dismissed";
 export default function PwaManager() {
   const { isOnline, canInstall, isInstalled, updateAvailable, installPwa, applyUpdate } = usePwa();
   const [showInstall, setShowInstall] = useState(false);
-  const [installDismissed, setInstallDismissed] = useState(true); // start hidden, set after mount
-
-  // Only show install prompt if not previously dismissed
-  useEffect(() => {
-    const dismissed = localStorage.getItem(INSTALL_DISMISSED_KEY) === "true";
-    setInstallDismissed(dismissed);
-  }, []);
+  const [installDismissed, setInstallDismissed] = useState(() => (
+    typeof window !== "undefined" ? localStorage.getItem(INSTALL_DISMISSED_KEY) === "true" : true
+  ));
 
   useEffect(() => {
-    if (canInstall && !isInstalled && !installDismissed) {
-      // Slight delay so it doesn't appear immediately on load
-      const t = setTimeout(() => setShowInstall(true), 3000);
-      return () => clearTimeout(t);
-    } else {
-      setShowInstall(false);
+    if (!canInstall || isInstalled || installDismissed) {
+      return;
     }
+    // Slight delay so it doesn't appear immediately on load
+    const t = setTimeout(() => setShowInstall(true), 3000);
+    return () => clearTimeout(t);
   }, [canInstall, isInstalled, installDismissed]);
 
   const dismissInstall = () => {

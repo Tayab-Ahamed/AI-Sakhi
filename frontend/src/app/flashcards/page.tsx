@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 
 import Sidebar from "@/components/Sidebar";
 import { api } from "@/lib/api";
@@ -326,8 +326,15 @@ export default function FlashcardsPage() {
               <Layers3 size={18} style={{ color: "#2563eb" }} />
             </div>
             <div>
-              <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.3px" }}>Flashcards</h1>
-              <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>Generate short revision cards, review what is due, and build long-term memory.</p>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.3px", margin: 0 }}>Flashcards</h1>
+                {dueStats && dueStats.due_now > 0 && (
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: "#fef3c7", color: "#b45309" }}>
+                    {dueStats.due_now} due today
+                  </span>
+                )}
+              </div>
+              <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>Generate short revision cards, review what is due, and build long-term memory.</p>
             </div>
           </div>
 

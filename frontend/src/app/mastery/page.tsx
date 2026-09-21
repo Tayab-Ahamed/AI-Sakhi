@@ -4,14 +4,25 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Sidebar from "@/components/Sidebar";
+import { api } from "@/lib/api";
 import { useUser } from "@/lib/user-context";
-import { RefreshCw, Trophy, BookOpen, AlertTriangle } from "lucide-react";
+import { RefreshCw, Trophy, AlertTriangle, MessageCircle } from "lucide-react";
 
 type TopicMastery = {
   topic: string;
   attempts: number;
   avg_pct: number;
-  last_attempted: string;
+  confidence?: "high" | "medium" | "low";
+  last_attempted?: string;
+  primary_misconception?: {
+    misconception_type: string;
+    occurrence_count: number;
+  } | null;
+  components?: {
+    recent_accuracy?: number;
+    consistency?: number;
+    decay_weight?: number;
+  };
 };
 
 export default function MasteryPage() {
@@ -19,16 +30,44 @@ export default function MasteryPage() {
   const router = useRouter();
   const [data, setData] = useState<TopicMastery[]>([]);
   const [loading, setLoading] = useState(true);
-  const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   useEffect(() => {
     if (isReady && !user) { router.push("/onboard"); return; }
     if (!user) return;
-    fetch(`${BASE_URL}/analytics/mastery/${user.user_id}`, { credentials: "include" })
-      .then(r => r.json())
-      .then(d => { setData(d.mastery || []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [user, isReady, router, BASE_URL]);
+    let active = true;
+    api.getMastery(user.user_id)
+      .then((res) => {
+        if (!active) return;
+        const v2List = (res as { mastery?: Array<Record<string, unknown>> }).mastery || [];
+        if (v2List.length > 0) {
+          const normalized: TopicMastery[] = v2List.map((m) => ({
+            topic: String(m.topic || ""),
+            attempts: Number(m.attempts || m.evidence_count || 0),
+            avg_pct: Math.round(Number(m.score ?? m.avg_pct ?? 0)),
+            confidence: (m.confidence as "high" | "medium" | "low") || "medium",
+            primary_misconception: m.primary_misconception as TopicMastery["primary_misconception"],
+            components: m.components as TopicMastery["components"],
+          }));
+          setData(normalized);
+          setLoading(false);
+          return;
+        }
+        // Fallback to legacy mastery if v2 is empty
+        return api.getTopicMastery(user.user_id).then((legacy) => {
+          if (!active) return;
+          const legList = (legacy as { mastery?: TopicMastery[] }).mastery || [];
+          setData(legList);
+          setLoading(false);
+        });
+      })
+      .catch(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user, isReady, router]);
 
   const colorClass = (pct: number) => pct >= 70 ? "green" : pct >= 40 ? "yellow" : "red";
   const emoji = (pct: number) => pct >= 70 ? "✅" : pct >= 40 ? "⚡" : "🔴";
@@ -116,8 +155,23 @@ export default function MasteryPage() {
                   >
                     <span style={{ fontSize: 20, display: "flex", alignItems: "center" }}>{emoji(item.avg_pct)}</span>
                     <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                        <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)" }}>{item.topic}</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)" }}>{item.topic}</span>
+                          {item.confidence && (
+                            <span style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              textTransform: "uppercase",
+                              padding: "2px 6px",
+                              borderRadius: 4,
+                              background: item.confidence === "high" ? "#ecfdf5" : item.confidence === "medium" ? "#fffbeb" : "#fef2f2",
+                              color: item.confidence === "high" ? "#059669" : item.confidence === "medium" ? "#d97706" : "#dc2626",
+                            }}>
+                              {item.confidence} confidence
+                            </span>
+                          )}
+                        </div>
                         <span style={{ fontSize: 13, fontWeight: 800, color: item.avg_pct >= 70 ? "#10b981" : item.avg_pct >= 40 ? "#f59e0b" : "#ef4444" }}>
                           {item.avg_pct}%
                         </span>
@@ -136,6 +190,46 @@ export default function MasteryPage() {
                       <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 5, fontWeight: 500 }}>
                         📊 {item.attempts} quiz attempt{item.attempts !== 1 ? "s" : ""} · Last studied {item.last_attempted ? new Date(item.last_attempted).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Recently"}
                       </div>
+                      {item.primary_misconception && (
+                        <div style={{
+                          marginTop: 10,
+                          padding: "8px 12px",
+                          background: "#fff7ed",
+                          borderRadius: 8,
+                          border: "1px solid #fed7aa",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 8,
+                          flexWrap: "wrap",
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#9a3412" }}>
+                            <AlertTriangle size={13} style={{ color: "#ea580c" }} />
+                            <span>
+                              Identified Misconception: <strong>{item.primary_misconception.misconception_type.replace(/_/g, " ")}</strong> (seen {item.primary_misconception.occurrence_count}×)
+                            </span>
+                          </div>
+                          <button
+                            className="btn btn-sm"
+                            style={{
+                              fontSize: 11,
+                              padding: "3px 10px",
+                              background: "#ea580c",
+                              color: "white",
+                              border: "none",
+                              borderRadius: 6,
+                              cursor: "pointer",
+                              fontWeight: 600,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                            onClick={() => router.push(`/chat?topic=${encodeURIComponent(item.topic)}`)}
+                          >
+                            <MessageCircle size={11} /> Remediate in Chat
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <button
                       className="btn btn-secondary"

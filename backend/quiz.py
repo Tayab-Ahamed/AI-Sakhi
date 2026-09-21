@@ -7,12 +7,9 @@ from __future__ import annotations
 import json
 import re
 
-from groq import Groq
-
-from backend.config import GROQ_API_KEY, GROQ_MODEL
+from backend.llm import complete
 from backend.language import is_text_compatible_with_language, language_instruction, normalize_language
-
-client = Groq(api_key=GROQ_API_KEY)
+from backend.learning_engine import classify_misconception
 
 QUIZ_SYSTEM = (
     "You are a quiz generator for Indian school students. "
@@ -69,13 +66,8 @@ def generate_quiz(topic: str, class_: str = "8", language: str = "English", diff
         difficulty_instruction=DIFFICULTY_INSTRUCTIONS[diff],
     )
     def _call(messages: list[dict]) -> dict:
-        resp = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=messages,
-            max_tokens=1800,
-            temperature=0.5,
-        )
-        raw = resp.choices[0].message.content.strip()
+        result = complete(messages, temperature=0.5, max_tokens=1800, tag="quiz_gen")
+        raw = result.text.strip()
         raw = re.sub(r"^```[a-z]*\n?", "", raw)
         raw = re.sub(r"\n?```$", "", raw)
         return json.loads(raw)
@@ -119,8 +111,8 @@ def generate_quiz(topic: str, class_: str = "8", language: str = "English", diff
 def evaluate_answer(question: dict, user_answer: str, language: str = "English") -> dict:
     """Evaluate a single MCQ answer and return feedback."""
     selected_language = normalize_language(language)
-    correct = question.get("correct", "").upper()
-    given = user_answer.upper().strip()
+    correct = str(question.get("correct", "")).upper().strip()
+    given = str(user_answer or "").upper().strip()
     is_correct = given == correct
     explanation = question.get("explanation", "")
 
@@ -135,8 +127,58 @@ def evaluate_answer(question: dict, user_answer: str, language: str = "English")
     else:
         feedback = f"Correct! {explanation}" if is_correct else f"Almost there! The correct answer is **{correct}**. {explanation}"
 
+    misconception_type = None
+    if not is_correct and given:
+        q_text = question.get("question", "")
+        options = question.get("options", {})
+        selected_text = options.get(given, given) if isinstance(options, dict) else given
+        correct_text = options.get(correct, correct) if isinstance(options, dict) else correct
+        misconception_type = classify_misconception(q_text, selected_text, correct_text, explanation)
+
     return {
         "is_correct": is_correct,
         "feedback": feedback,
         "correct_answer": correct,
+        "misconception_type": misconception_type,
     }
+
+
+def evaluate_quiz_batch(
+    questions: list[dict],
+    answers: dict[str, str],
+    language: str = "English",
+    topic: str = "",
+) -> dict:
+    """Evaluate a full set of questions in one go, classifying misconceptions for incorrect items."""
+    results = {}
+    score = 0
+    misconceptions = []
+
+    for q in questions:
+        qid = str(q.get("id", ""))
+        given = answers.get(qid, "")
+        evaluated = evaluate_answer(q, given, language)
+        results[qid] = evaluated
+        if evaluated["is_correct"]:
+            score += 1
+        elif evaluated.get("misconception_type"):
+            misconceptions.append({
+                "question_id": qid,
+                "topic": topic,
+                "question": q.get("question", ""),
+                "answer": given,
+                "expected": evaluated["correct_answer"],
+                "explanation": q.get("explanation", ""),
+                "misconception_type": evaluated["misconception_type"],
+            })
+
+    total = len(questions)
+    pct = round((score / max(1, total)) * 100, 1)
+    return {
+        "score": score,
+        "total": total,
+        "percentage": pct,
+        "results": results,
+        "misconceptions": misconceptions,
+    }
+

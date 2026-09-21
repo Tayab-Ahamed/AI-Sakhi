@@ -29,7 +29,20 @@ export default function GoalsPage() {
     setGoals(result.goals || []);
   };
 
-  useEffect(() => { load().catch(() => setError("Could not load your goals.")); }, [user?.user_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!user?.user_id) return;
+    let ignore = false;
+    (api.getGoals(user.user_id) as Promise<{ goals?: Goal[] }>)
+      .then((res) => {
+        if (!ignore) setGoals(res.goals || []);
+      })
+      .catch(() => {
+        if (!ignore) setError("Could not load your goals.");
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [user?.user_id]);
 
   const create = async (event: FormEvent) => {
     event.preventDefault();

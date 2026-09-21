@@ -21,33 +21,46 @@ const UserContext = createContext<UserContextValue | null>(null);
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<SakhiUser | null>(() => getStoredUser());
-  const [auth, setAuthState] = useState<SakhiAuth | null>(() => getStoredAuth());
+  const [auth, setAuthState] = useState<SakhiAuth | null>(() => {
+    const stored = getStoredAuth();
+    if (stored?.token && isTokenExpired(stored.token)) {
+      saveStoredAuth(null);
+      return null;
+    }
+    return stored;
+  });
   const [sessionId] = useState(() => getSessionId());
   const isReady = typeof window !== "undefined";
 
   useEffect(() => {
     if (!auth?.token) return;
-    // Check token expiry locally first to avoid unnecessary network calls
-    if (isTokenExpired(auth.token)) {
-      setAuthState(null);
-      saveStoredAuth(null);
-      return;
-    }
-    // Optionally verify with backend (non-blocking)
+    let ignore = false;
+    // Verify with backend (non-blocking)
     api.verifyToken({ token: auth.token }).catch(() => {
-      setAuthState(null);
-      saveStoredAuth(null);
+      if (!ignore) {
+        setAuthState(null);
+        saveStoredAuth(null);
+      }
     });
+    return () => {
+      ignore = true;
+    };
   }, [auth?.token]);
 
   useEffect(() => {
     if (!user?.user_id) return;
+    let ignore = false;
     (api.getUser(user.user_id) as Promise<unknown> as Promise<SakhiUser>)
       .then((fresh) => {
-        setUserState(fresh);
-        saveStoredUser(fresh);
+        if (!ignore && fresh) {
+          setUserState(fresh);
+          saveStoredUser(fresh);
+        }
       })
       .catch(() => {});
+    return () => {
+      ignore = true;
+    };
   }, [user?.user_id]);
 
   const setUser = (nextUser: SakhiUser | null, nextAuth?: SakhiAuth | null) => {

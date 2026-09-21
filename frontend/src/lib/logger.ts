@@ -26,7 +26,7 @@ class ProductionLogger {
   }
 
   private async reportToBackend(payload: LogPayload) {
-    if (!IS_PROD) return;
+    if (!IS_PROD || !payload) return;
     try {
       // Wired hook for Sentry, LogRocket, or backend REST endpoints
       // fetch("/api/log-crash", {

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { useUser } from "@/lib/user-context";
 import { api } from "@/lib/api";
-import { FileText, Download, Loader2, ChevronDown, ChevronRight, Printer, BookOpen } from "lucide-react";
+import { FileText, Loader2, ChevronDown, ChevronRight, Printer, BookOpen } from "lucide-react";
 import { getSubjectsForClass } from "@/lib/curriculum";
 
 type Question = {

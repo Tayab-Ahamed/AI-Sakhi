@@ -44,6 +44,22 @@ type RetryTopic = {
   reason: string;
 };
 
+type SprintBlock = {
+  phase: "warmup" | "practice" | "recall";
+  topic: string;
+  duration_minutes: number;
+  action: string;
+  prompt: string;
+};
+
+type SmartSprint = {
+  user_id: number;
+  class_?: string;
+  primary_subject?: string;
+  sprint_minutes: number;
+  blocks: SprintBlock[];
+};
+
 type SavedArtifact = {
   id: number;
   artifact_type: string;
@@ -307,6 +323,102 @@ function readSavedGoal(userId?: number) {
   } catch {
     return "";
   }
+}
+
+function SmartSprintCard({ sprint }: { sprint: SmartSprint }) {
+  const phaseMeta: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
+    warmup: { label: "1. Quick Warmup", emoji: "🌱", color: "#059669", bg: "#ecfdf5" },
+    practice: { label: "2. Deep Practice", emoji: "⚡", color: "#d97706", bg: "#fffbeb" },
+    recall: { label: "3. Active Recall", emoji: "🧠", color: "#7c3aed", bg: "#f5f3ff" },
+  };
+
+  const getActionHref = (block: SprintBlock) => {
+    if (block.action === "flashcards") return "/flashcards";
+    if (block.action === "quiz") return `/quiz?topic=${encodeURIComponent(block.topic)}`;
+    return `/chat?topic=${encodeURIComponent(block.topic)}`;
+  };
+
+  return (
+    <div
+      className="card"
+      style={{
+        padding: "22px 24px",
+        marginBottom: 20,
+        background: "linear-gradient(135deg, rgba(6, 78, 59, 0.04) 0%, rgba(13, 148, 136, 0.08) 100%)",
+        border: "1.5px solid rgba(13, 148, 136, 0.25)",
+        borderRadius: "var(--radius-xl)",
+        position: "relative",
+        boxShadow: "var(--shadow-sm)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", borderRadius: 99, background: "#0d9488", color: "white", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+            <span>⚡ Daily Smart Sprint</span>
+            <span>·</span>
+            <span>{sprint.sprint_minutes} Minutes</span>
+          </div>
+          <h2 style={{ fontSize: 17, fontWeight: 800, margin: 0, color: "var(--text-primary)" }}>
+            Today&apos;s Adaptive Micro-Curriculum
+          </h2>
+          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "4px 0 0" }}>
+            Tailored dynamically from your weakest concepts and active goals.
+          </p>
+        </div>
+        <Link
+          href={`/focus-timer?minutes=${sprint.sprint_minutes}&topic=${encodeURIComponent(sprint.blocks[1]?.topic || sprint.blocks[0]?.topic || "Daily Sprint")}`}
+          className="btn btn-primary btn-sm"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 700 }}
+        >
+          <Clock size={14} /> Start 25m Timer
+        </Link>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+        {sprint.blocks.map((block, idx) => {
+          const meta = phaseMeta[block.phase] || { label: block.phase, emoji: "🎯", color: "#0d9488", bg: "#f0fdfa" };
+          return (
+            <div
+              key={idx}
+              style={{
+                background: "var(--bg-surface)",
+                borderRadius: "var(--radius-lg)",
+                padding: "14px 16px",
+                border: "1px solid var(--border)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: meta.color, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    {meta.emoji} {meta.label}
+                  </span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", background: meta.bg, padding: "2px 6px", borderRadius: 6 }}>
+                    {block.duration_minutes}m
+                  </span>
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>
+                  {block.topic}
+                </div>
+                <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.4, margin: "0 0 10px" }}>
+                  {block.prompt}
+                </p>
+              </div>
+              <Link
+                href={getActionHref(block)}
+                className="btn btn-secondary btn-sm"
+                style={{ justifyContent: "center", fontSize: 12, width: "100%", padding: "6px 10px" }}
+              >
+                Go to {block.action.charAt(0).toUpperCase() + block.action.slice(1)} <ArrowRight size={12} style={{ marginLeft: 4 }} />
+              </Link>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function DailyGoalCard({ userId, weakSubject }: { userId?: number; weakSubject?: string }) {
@@ -655,6 +767,7 @@ export default function DashboardPage() {
   });
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [retryTopic, setRetryTopic] = useState<RetryTopic | null>(null);
+  const [smartSprint, setSmartSprint] = useState<SmartSprint | null>(null);
   const [dueFlashcards, setDueFlashcards] = useState(0);
   const [pendingAssignments, setPendingAssignments] = useState<Array<{ id: number; title: string; topic: string; subject: string; due_date: string | null; difficulty: string }>>([]);
   const [loading, setLoading] = useState(Boolean(user?.user_id));
@@ -678,10 +791,11 @@ export default function DashboardPage() {
         if (typeof window !== "undefined") {
           localStorage.setItem("sakhi_library_backup", JSON.stringify(fetchedArtifacts));
         }
-        // Phase 8: load recommendations + due flashcards in parallel
-        const [recData, dueData] = await Promise.all([
+        // Phase 8: load recommendations, due flashcards, and smart sprint in parallel
+        const [recData, dueData, sprintData] = await Promise.all([
           (api.getRecommendations(user.user_id) as Promise<{ next_topics?: Recommendation[]; retry_topic?: RetryTopic | null }>).catch(() => null),
           (api.getDueFlashcards(user.user_id) as Promise<{ stats?: { due_now: number } }>).catch(() => null),
+          (api.getSmartSprint(user.user_id, 25) as unknown as Promise<SmartSprint>).catch(() => null),
         ]);
         if (recData) {
           setRecommendations(recData.next_topics || []);
@@ -690,12 +804,14 @@ export default function DashboardPage() {
         if (dueData?.stats) {
           setDueFlashcards(dueData.stats.due_now || 0);
         }
+        if (sprintData && sprintData.blocks && sprintData.blocks.length > 0) {
+          setSmartSprint(sprintData);
+        }
         // Phase 10: load pending student assignments
         const asgData = await (api.getStudentAssignments(user.user_id, user.organization_id) as unknown as Promise<Array<{ id: number; title: string; topic: string; subject: string; due_date: string | null; difficulty: string; my_submission?: { completed: boolean } }>>).catch(() => null);
         if (asgData) {
           const pending = (Array.isArray(asgData) ? asgData : []).filter(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (a: any) => !a.my_submission?.completed
+            (a: { my_submission?: { completed?: boolean } }) => !a.my_submission?.completed
           );
           setPendingAssignments(pending);
         }
@@ -704,7 +820,7 @@ export default function DashboardPage() {
       }
     };
     load();
-  }, [sessionId, user?.organization_id, user?.user_id]);
+  }, [sessionId, user?.organization_id, user?.user_id, user?.role]);
 
   const streak = progress?.streak || 0;
   const history = progress?.history || [];
@@ -860,6 +976,9 @@ export default function DashboardPage() {
             <StatCard icon={Trophy} label="Quizzes Done" value={history.length} iconBg="#f5f3ff" iconColor="#7c3aed" />
             <StatCard icon={Target} label="XP Earned" value={xp} iconBg="#f0fdf4" iconColor="var(--emerald)" />
           </div>
+
+          {/* Daily Smart Sprint */}
+          {smartSprint && <SmartSprintCard sprint={smartSprint} />}
 
           {/* Daily goal */}
           <DailyGoalCard key={user?.user_id ?? "guest"} userId={user?.user_id} weakSubject={user?.weak_subject} />

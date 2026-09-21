@@ -30,9 +30,9 @@ export type PwaState = {
 const SYNC_QUEUE_TAG = "sakhi-sync-queue";
 
 export function usePwa(): PwaState {
-  const [isOnline, setIsOnline]           = useState(true);
+  const [isOnline, setIsOnline]           = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
   const [canInstall, setCanInstall]       = useState(false);
-  const [isInstalled, setIsInstalled]     = useState(false);
+  const [isInstalled, setIsInstalled]     = useState(() => (typeof window !== "undefined" && window.matchMedia("(display-mode: standalone)").matches));
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
   const newWorkerRef      = useRef<ServiceWorker | null>(null);
@@ -40,13 +40,6 @@ export function usePwa(): PwaState {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // ── Initial online state ─────────────────────────────────
-    setIsOnline(navigator.onLine);
-
-    // ── Check if already installed (standalone mode) ─────────
-    if (window.matchMedia("(display-mode: standalone)").matches) {
-      setIsInstalled(true);
-    }
 
     // ── Online / offline events ──────────────────────────────
     const handleOnline = () => {
