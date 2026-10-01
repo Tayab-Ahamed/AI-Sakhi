@@ -19,7 +19,7 @@ function PageTransition({ children }: { children: ReactNode }) {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -6 }}
         transition={{ duration: 0.25, ease: "easeInOut" }}
-        style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", flex: 1 }}
+        style={{ width: "100%", minHeight: "100%", display: "flex", flexDirection: "column", flex: 1 }}
       >
         {children}
       </motion.div>
