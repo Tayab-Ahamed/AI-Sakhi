@@ -65,7 +65,7 @@ function getNavItems(role: string) {
 
 // ── Role-specific sidebar accent colours ────────────────────────────────────
 function getRoleAccent(role: string) {
-  return ROLE_CONFIG[role]?.color || "#059669";
+  return ROLE_CONFIG[role]?.color || "#5e6ad2";
 }
 
 const LANGUAGES = ["English", "Hinglish", "Hindi", "Kannada", "Tamil"] as const;
@@ -306,7 +306,7 @@ export default function Sidebar() {
           <div className="sidebar-divider" />
           <div style={{ padding: "8px", background: "var(--bg-app)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)", marginBottom: 8 }}>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 2, fontWeight: 600 }}>NCERT RAG</div>
-            <div style={{ fontSize: 12, color: ragReady ? "#059669" : "var(--text-secondary)" }}>
+            <div style={{ fontSize: 12, color: ragReady ? "#5e6ad2" : "var(--text-secondary)" }}>
               {ragReady === null ? "Checking…" : ragReady ? `✓ ${ragChunks} chunks ready` : "Not loaded · Run ingest.py"}
             </div>
           </div>

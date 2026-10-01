@@ -124,10 +124,18 @@ export default function Home() {
 
           {/* Desktop nav links */}
           <div className="hidden md:flex items-center gap-1">
-            {["Capabilities", "How It Works", "For Schools"].map((item) => (
+            {[
+              { label: "Capabilities", targetId: "capabilities" },
+              { label: "Roles", targetId: "roles" },
+              { label: "How It Works", targetId: "how-it-works" },
+            ].map(({ label, targetId }) => (
               <button
-                key={item}
-                className="px-3 py-1.5 rounded-md text-sm transition-colors"
+                key={label}
+                onClick={() => {
+                  const el = document.getElementById(targetId);
+                  if (el) el.scrollIntoView({ behavior: "smooth" });
+                }}
+                className="px-3 py-1.5 rounded-md text-sm transition-colors cursor-pointer"
                 style={{
                   color: "#8a8f98",
                   fontSize: 13,
@@ -136,7 +144,7 @@ export default function Home() {
                 onMouseEnter={(e) => (e.currentTarget.style.color = "#f7f8f8")}
                 onMouseLeave={(e) => (e.currentTarget.style.color = "#8a8f98")}
               >
-                {item}
+                {label}
               </button>
             ))}
           </div>
@@ -183,7 +191,7 @@ export default function Home() {
 
             {/* Mobile hamburger */}
             <button
-              className="flex md:hidden items-center justify-center w-8 h-8 rounded-md"
+              className="flex md:hidden items-center justify-center w-8 h-8 rounded-md cursor-pointer"
               style={{ color: "#8a8f98" }}
               onClick={() => setMenuOpen(!menuOpen)}
               aria-label="Toggle menu"
@@ -216,24 +224,31 @@ export default function Home() {
             style={{ background: "rgba(1,1,2,0.96)", backdropFilter: "blur(24px)" }}
           >
             <div className="flex flex-col items-center gap-6">
-              {["Capabilities", "How It Works", "For Schools", "Sign in", "Get started"].map(
-                (item, i) => (
-                  <motion.div
-                    key={item}
-                    initial={{ y: 20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ delay: 0.05 * i, duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+              {[
+                { label: "Capabilities", action: () => document.getElementById("capabilities")?.scrollIntoView({ behavior: "smooth" }) },
+                { label: "Roles", action: () => document.getElementById("roles")?.scrollIntoView({ behavior: "smooth" }) },
+                { label: "How It Works", action: () => document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth" }) },
+                { label: "Sign in", action: () => router.push("/login") },
+                { label: "Get started", action: () => router.push("/login") },
+              ].map((item, i) => (
+                <motion.div
+                  key={item.label}
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.05 * i, duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+                >
+                  <button
+                    className="text-2xl font-semibold cursor-pointer"
+                    style={{ color: "#f7f8f8", letterSpacing: "-0.5px" }}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      item.action();
+                    }}
                   >
-                    <button
-                      className="text-2xl font-semibold"
-                      style={{ color: "#f7f8f8", letterSpacing: "-0.5px" }}
-                      onClick={() => setMenuOpen(false)}
-                    >
-                      {item}
-                    </button>
-                  </motion.div>
-                )
-              )}
+                    {item.label}
+                  </button>
+                </motion.div>
+              ))}
             </div>
           </motion.div>
         )}
@@ -437,7 +452,7 @@ export default function Home() {
       </section>
 
       {/* ── CAPABILITIES BENTO ─────────────────────────────────── */}
-      <section className="w-full px-6 md:px-12 lg:px-16 xl:px-24 py-24 max-w-[1280px] mx-auto">
+      <section id="capabilities" className="w-full px-6 md:px-12 lg:px-16 xl:px-24 py-24 max-w-[1280px] mx-auto scroll-mt-20">
         <motion.div
           initial={{ y: 24, opacity: 0 }}
           whileInView={{ y: 0, opacity: 1 }}
@@ -771,7 +786,7 @@ export default function Home() {
       </section>
 
       {/* ── ROLE PORTALS ───────────────────────────────────────── */}
-      <section className="w-full px-6 md:px-12 lg:px-16 xl:px-24 py-24 max-w-[1280px] mx-auto">
+      <section id="roles" className="w-full px-6 md:px-12 lg:px-16 xl:px-24 py-24 max-w-[1280px] mx-auto scroll-mt-20">
         <motion.div
           initial={{ y: 24, opacity: 0 }}
           whileInView={{ y: 0, opacity: 1 }}
@@ -915,7 +930,7 @@ export default function Home() {
       </section>
 
       {/* ── STUDENT PORTRAIT — Z-Axis editorial break ──────────── */}
-      <section className="w-full px-6 md:px-12 lg:px-16 xl:px-24 py-24 max-w-[1280px] mx-auto">
+      <section id="how-it-works" className="w-full px-6 md:px-12 lg:px-16 xl:px-24 py-24 max-w-[1280px] mx-auto scroll-mt-20">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
           {/* Portrait image — Double Bezel */}
           <motion.div

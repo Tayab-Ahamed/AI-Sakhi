@@ -57,8 +57,15 @@ self.addEventListener("fetch", (event) => {
   // Ignore chrome-extension and non-http(s)
   if (!url.protocol.startsWith("http")) return;
 
-  // Ignore Next.js HMR / development endpoints
-  if (url.pathname.startsWith("/_next/webpack-hmr")) return;
+  // Ignore Next.js HMR / development endpoints and localhost
+  if (
+    url.hostname === "localhost" ||
+    url.hostname === "127.0.0.1" ||
+    url.pathname.startsWith("/_next/webpack-hmr") ||
+    url.pathname.includes("turbopack")
+  ) {
+    return;
+  }
 
   // ── Quiz generation: Network-First, cache on success ──────
   if (QUIZ_API_PATTERN.test(url.pathname) && request.method === "POST") {

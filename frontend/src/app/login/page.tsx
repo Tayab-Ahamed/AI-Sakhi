@@ -3,17 +3,35 @@
 import { Suspense, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useUser } from "@/lib/user-context";
 import { getRoleLandingPage, ROLE_CONFIG } from "@/lib/auth";
 import { api } from "@/lib/api";
-import { Eye, EyeOff, ArrowLeft, ArrowRight } from "lucide-react";
+import {
+  Student,
+  Chalkboard,
+  Users,
+  ShieldCheck,
+  ArrowRight,
+  ArrowLeft,
+  Eye,
+  EyeSlash,
+} from "@phosphor-icons/react";
+
+const ROLE_ICONS: Record<string, React.ElementType> = {
+  student: Student,
+  teacher: Chalkboard,
+  parent: Users,
+  admin: ShieldCheck,
+};
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const rawRole = searchParams.get("role") || "student";
-  const role = rawRole in ROLE_CONFIG ? rawRole : "student";
-  const cfg = ROLE_CONFIG[role];
+  const [selectedRole, setSelectedRole] = useState(rawRole in ROLE_CONFIG ? rawRole : "student");
+  const cfg = ROLE_CONFIG[selectedRole] || ROLE_CONFIG.student;
+  const RoleIcon = ROLE_ICONS[selectedRole] || Student;
 
   const { setUser } = useUser();
   const [form, setForm] = useState({ name: "", password: "" });
@@ -30,124 +48,206 @@ function LoginForm() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const res = await (api as any).login(form) as any;
       setUser(res, res.auth || null);
-      router.push(getRoleLandingPage(res.role || role));
+      router.push(getRoleLandingPage(res.role || selectedRole));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Invalid name or password.";
-      // Try to extract backend detail from JSON error body
-      try { const parsed = JSON.parse((err as Error).message); setError(parsed.detail || msg); } catch { setError(msg); }
+      try {
+        const parsed = JSON.parse((err as Error).message);
+        setError(parsed.detail || msg);
+      } catch {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    background: "#111",
-    border: "1px solid #2a2a2a",
-    borderRadius: 12,
-    padding: "12px 16px",
-    fontSize: 14,
-    fontFamily: "Inter, sans-serif",
-    color: "white",
-    outline: "none",
-    boxSizing: "border-box",
-    transition: "border-color 0.15s",
-  };
-
   return (
-    <div style={{ minHeight: "100vh", background: "#080808", display: "flex", fontFamily: "Inter, sans-serif" }}>
-
-      {/* ── Left brand panel ── */}
-      <motion.div
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
+    <div
+      className="min-h-[100dvh] w-full flex flex-col items-center justify-center px-4 py-12 relative"
+      style={{
+        background: "#010102",
+        color: "#f7f8f8",
+        fontFamily: "var(--font-plus-jakarta-sans), system-ui, sans-serif",
+      }}
+    >
+      {/* Back button */}
+      <Link
+        href="/"
+        className="absolute top-6 left-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
         style={{
-          width: "42%",
-          minWidth: 300,
-          background: cfg.bg,
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          padding: "56px 48px",
-          position: "relative",
-          overflow: "hidden",
+          background: "#0f1011",
+          border: "1px solid #23252a",
+          color: "#8a8f98",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.color = "#f7f8f8";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = "#8a8f98";
         }}
       >
-        {/* decorative circles */}
-        <div style={{ position: "absolute", top: -80, left: -80, width: 280, height: 280, borderRadius: "50%", background: "rgba(255,255,255,0.06)", pointerEvents: "none" }} />
-        <div style={{ position: "absolute", bottom: -100, right: -60, width: 340, height: 340, borderRadius: "50%", background: "rgba(255,255,255,0.04)", pointerEvents: "none" }} />
+        <ArrowLeft size={14} /> Back to Home
+      </Link>
 
-        {/* Back button */}
-        <button
-          onClick={() => router.push("/")}
-          style={{ position: "absolute", top: 24, left: 24, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 10, padding: "8px 14px", cursor: "pointer", color: "white", fontSize: 13, display: "flex", alignItems: "center", gap: 6, fontFamily: "Inter, sans-serif", backdropFilter: "blur(6px)" }}
+      {/* Main card — Double Bezel */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: [0.32, 0.72, 0, 1] }}
+        className="w-full max-w-md"
+        style={{
+          padding: 6,
+          background: "#0c0c0d",
+          border: "1px solid #23252a",
+          borderRadius: 24,
+        }}
+      >
+        <div
+          style={{
+            background: "#0f1011",
+            borderRadius: 19,
+            border: "1px solid #1a1b1d",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+            padding: "2.5rem 2rem",
+          }}
         >
-          <ArrowLeft size={14} /> Back
-        </button>
+          {/* Header */}
+          <div className="flex flex-col items-center text-center mb-8">
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center mb-4"
+              style={{
+                background: "rgba(94,106,210,0.12)",
+                border: "1px solid rgba(94,106,210,0.25)",
+              }}
+            >
+              <RoleIcon size={24} weight="light" style={{ color: "#5e6ad2" }} />
+            </div>
 
-        <div style={{ fontSize: 72, marginBottom: 28, lineHeight: 1 }}>{cfg.emoji}</div>
-        <div style={{ fontSize: 36, fontWeight: 900, color: "white", marginBottom: 14, letterSpacing: "-0.6px", lineHeight: 1.1 }}>
-          {cfg.label}<br />Portal
-        </div>
-        <p style={{ fontSize: 16, color: "rgba(255,255,255,0.72)", lineHeight: 1.7, marginBottom: 40 }}>
-          {cfg.tagline}
-        </p>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "rgba(255,255,255,0.45)" }}>
-          <span style={{ fontSize: 18 }}>🌸</span>
-          AI Sakhi — Personalised Learning Platform
-        </div>
-      </motion.div>
+            <h1
+              className="text-2xl font-bold tracking-tight mb-1"
+              style={{ color: "#f7f8f8", letterSpacing: "-0.5px" }}
+            >
+              Sign in to AI Sakhi
+            </h1>
+            <p style={{ fontSize: 13, color: "#8a8f98" }}>{cfg.tagline}</p>
 
-      {/* ── Right form panel ── */}
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "48px 40px" }}>
-        <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }} style={{ width: "100%", maxWidth: 420 }}>
-
-          {/* Role badge */}
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", borderRadius: 99, background: cfg.color + "18", border: `1px solid ${cfg.color}40`, marginBottom: 28 }}>
-            <span style={{ fontSize: 14 }}>{cfg.emoji}</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: cfg.color }}>{cfg.label} Portal</span>
+            {/* Role switcher pills */}
+            <div
+              className="flex items-center gap-1 p-1 rounded-full mt-5 max-w-full overflow-x-auto"
+              style={{
+                background: "#0c0c0d",
+                border: "1px solid #1e2024",
+              }}
+            >
+              {Object.entries(ROLE_CONFIG).map(([roleKey, roleVal]) => {
+                const isSelected = selectedRole === roleKey;
+                return (
+                  <button
+                    key={roleKey}
+                    type="button"
+                    onClick={() => {
+                      setSelectedRole(roleKey);
+                      setError("");
+                    }}
+                    className="px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer whitespace-nowrap"
+                    style={{
+                      background: isSelected ? "rgba(94,106,210,0.2)" : "transparent",
+                      color: isSelected ? "#828fff" : "#62666d",
+                      border: isSelected ? "1px solid rgba(94,106,210,0.35)" : "1px solid transparent",
+                    }}
+                  >
+                    {roleVal.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          <h1 style={{ fontSize: 30, fontWeight: 900, color: "white", marginBottom: 8, letterSpacing: "-0.5px" }}>Welcome back</h1>
-          <p style={{ fontSize: 14, color: "#555", marginBottom: 32 }}>Sign in to your {cfg.label.toLowerCase()} account</p>
-
-          {/* Error */}
+          {/* Error notice */}
           {error && (
-            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-              style={{ background: "#1a0808", border: "1px solid #dc262640", borderRadius: 12, padding: "12px 16px", marginBottom: 20, fontSize: 13, color: "#ef4444", lineHeight: 1.5 }}>
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-5 p-3 rounded-lg text-xs"
+              style={{
+                background: "rgba(225,29,72,0.1)",
+                border: "1px solid rgba(225,29,72,0.25)",
+                color: "#f43f5e",
+              }}
+            >
               {error}
             </motion.div>
           )}
 
-          <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          {/* Form */}
+          <form onSubmit={submit} className="flex flex-col gap-4">
             <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: "#666", display: "block", marginBottom: 8, letterSpacing: "0.03em" }}>NAME</label>
+              <label
+                className="block text-xs uppercase font-medium mb-1.5"
+                style={{ color: "#62666d", letterSpacing: "0.04em" }}
+              >
+                Name
+              </label>
               <input
-                style={inputStyle}
+                type="text"
                 placeholder="Enter your name"
                 value={form.name}
-                onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 autoFocus
-                onFocus={(e) => { e.target.style.borderColor = cfg.color; }}
-                onBlur={(e) => { e.target.style.borderColor = "#2a2a2a"; }}
+                className="w-full px-3.5 py-2.5 rounded-lg text-sm transition-all outline-none"
+                style={{
+                  background: "#0c0c0d",
+                  border: "1px solid #23252a",
+                  color: "#f7f8f8",
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = "#5e6ad2";
+                  e.target.style.boxShadow = "0 0 0 2px rgba(94,106,210,0.2)";
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = "#23252a";
+                  e.target.style.boxShadow = "none";
+                }}
               />
             </div>
 
             <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: "#666", display: "block", marginBottom: 8, letterSpacing: "0.03em" }}>PASSWORD</label>
-              <div style={{ position: "relative" }}>
+              <label
+                className="block text-xs uppercase font-medium mb-1.5"
+                style={{ color: "#62666d", letterSpacing: "0.04em" }}
+              >
+                Password
+              </label>
+              <div className="relative">
                 <input
-                  style={{ ...inputStyle, paddingRight: 44 }}
                   type={showPw ? "text" : "password"}
                   placeholder="Enter your password"
                   value={form.password}
-                  onChange={(e) => setForm(f => ({ ...f, password: e.target.value }))}
-                  onFocus={(e) => { e.target.style.borderColor = cfg.color; }}
-                  onBlur={(e) => { e.target.style.borderColor = "#2a2a2a"; }}
+                  onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                  className="w-full px-3.5 py-2.5 pr-10 rounded-lg text-sm transition-all outline-none"
+                  style={{
+                    background: "#0c0c0d",
+                    border: "1px solid #23252a",
+                    color: "#f7f8f8",
+                  }}
+                  onFocus={(e) => {
+                    e.target.style.borderColor = "#5e6ad2";
+                    e.target.style.boxShadow = "0 0 0 2px rgba(94,106,210,0.2)";
+                  }}
+                  onBlur={(e) => {
+                    e.target.style.borderColor = "#23252a";
+                    e.target.style.boxShadow = "none";
+                  }}
                 />
-                <button type="button" onClick={() => setShowPw(s => !s)}
-                  style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#555", display: "flex" }}>
-                  {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                <button
+                  type="button"
+                  onClick={() => setShowPw((s) => !s)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer p-1"
+                  style={{ color: "#62666d" }}
+                  aria-label="Toggle password visibility"
+                >
+                  {showPw ? <EyeSlash size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </div>
@@ -155,61 +255,63 @@ function LoginForm() {
             <button
               type="submit"
               disabled={loading || !form.name.trim() || !form.password}
+              className="mt-2 flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-medium transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
-                background: (loading || !form.name.trim() || !form.password) ? "#1a1a1a" : cfg.bg,
-                color: (loading || !form.name.trim() || !form.password) ? "#444" : "white",
-                border: "none",
-                borderRadius: 14,
-                padding: "15px",
-                fontSize: 15,
-                fontWeight: 700,
-                cursor: (loading || !form.name.trim() || !form.password) ? "not-allowed" : "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                fontFamily: "Inter, sans-serif",
-                marginTop: 4,
-                transition: "all 0.2s",
+                background: "#5e6ad2",
+                color: "#ffffff",
+              }}
+              onMouseEnter={(e) => {
+                if (!e.currentTarget.disabled) e.currentTarget.style.background = "#828fff";
+              }}
+              onMouseLeave={(e) => {
+                if (!e.currentTarget.disabled) e.currentTarget.style.background = "#5e6ad2";
               }}
             >
-              {loading ? "Signing in…" : <><span>Sign In as {cfg.label}</span><ArrowRight size={16} /></>}
+              {loading ? (
+                "Signing in..."
+              ) : (
+                <>
+                  <span>Sign in as {cfg.label}</span>
+                  <ArrowRight size={14} weight="bold" />
+                </>
+              )}
             </button>
           </form>
 
-          <div style={{ marginTop: 32, paddingTop: 24, borderTop: "1px solid #161616", textAlign: "center" }}>
-            <p style={{ fontSize: 13, color: "#444" }}>
-              New here?{" "}
-              <button
-                onClick={() => router.push(`/onboard?role=${role}`)}
-                style={{ background: "none", border: "none", color: cfg.color, fontWeight: 700, cursor: "pointer", fontSize: 13, fontFamily: "Inter, sans-serif" }}
+          {/* Footer links */}
+          <div
+            className="mt-6 pt-5 flex flex-col items-center gap-2 text-center text-xs"
+            style={{ borderTop: "1px solid #1e2024" }}
+          >
+            <p style={{ color: "#62666d" }}>
+              New to AI Sakhi?{" "}
+              <Link
+                href={`/onboard?role=${selectedRole}`}
+                className="font-medium hover:underline"
+                style={{ color: "#5e6ad2" }}
               >
                 Create {cfg.label} account →
-              </button>
-            </p>
-            <p style={{ fontSize: 12, color: "#333", marginTop: 12 }}>
-              Different role?{" "}
-              <button
-                onClick={() => router.push("/")}
-                style={{ background: "none", border: "none", color: "#555", fontWeight: 600, cursor: "pointer", fontSize: 12, fontFamily: "Inter, sans-serif" }}
-              >
-                Go back to role selector
-              </button>
+              </Link>
             </p>
           </div>
-        </motion.div>
-      </div>
+        </div>
+      </motion.div>
     </div>
   );
 }
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={
-      <div style={{ minHeight: "100vh", background: "#080808", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ fontSize: 36 }}>🌸</div>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div
+          className="min-h-screen flex items-center justify-center"
+          style={{ background: "#010102" }}
+        >
+          <div className="w-8 h-8 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
+        </div>
+      }
+    >
       <LoginForm />
     </Suspense>
   );
