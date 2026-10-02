@@ -1,15 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
 
 import AppProviders from "@/components/AppProviders";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import "./globals.css";
-
-const plusJakartaSans = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-plus-jakarta-sans",
-});
 
 export const metadata: Metadata = {
   title: "AI Sakhi - Your Personal Study Companion",
@@ -33,7 +26,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={plusJakartaSans.variable}>
+    <html lang="en" data-scroll-behavior="smooth">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -43,7 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
-      <body className={plusJakartaSans.className}>
+      <body>
         <ErrorBoundary>
           <AppProviders>{children}</AppProviders>
         </ErrorBoundary>

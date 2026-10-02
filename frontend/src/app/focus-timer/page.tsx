@@ -35,9 +35,9 @@ function FocusTimerPageContent() {
   const [completed, setCompleted] = useState(0);
   const [tipIdx, setTipIdx] = useState(0);
   const [showCelebrate, setShowCelebrate] = useState(false);
-  const [notifGranted, setNotifGranted] = useState(() => (
-    typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted"
-  ));
+  // Keep the first render identical on server and client. Browser permission is
+  // read after mount so the timer never hydrates into a different layout.
+  const [notifGranted, setNotifGranted] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const mode = MODES[modeIdx];
   const total = mode.minutes * 60;
@@ -51,6 +51,8 @@ function FocusTimerPageContent() {
     if (typeof window !== "undefined" && "Notification" in window) {
       if (Notification.permission !== "granted" && Notification.permission !== "denied") {
         Notification.requestPermission().then((p) => setNotifGranted(p === "granted"));
+      } else if (Notification.permission === "granted") {
+        Promise.resolve().then(() => setNotifGranted(true));
       }
     }
   }, []);
@@ -140,10 +142,14 @@ function FocusTimerPageContent() {
               </p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              {!notifGranted && "Notification" in (typeof window !== "undefined" ? window : {}) && (
+              {!notifGranted && (
                 <button
                   className="btn btn-ghost btn-sm"
-                  onClick={() => Notification.requestPermission().then((p) => setNotifGranted(p === "granted"))}
+                  onClick={() => {
+                    if ("Notification" in window) {
+                      Notification.requestPermission().then((p) => setNotifGranted(p === "granted"));
+                    }
+                  }}
                   style={{ fontSize: 12 }}
                 >
                   <Bell size={13} /> Enable Alerts

@@ -2,22 +2,19 @@
 
 import { Suspense, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { getLevels, getSubjectsForClass } from "@/lib/curriculum";
 import { useUser } from "@/lib/user-context";
 import { getRoleLandingPage, ROLE_CONFIG } from "@/lib/auth";
+import { BrandMark } from "@/components/BrandMark";
 import {
   ArrowRight,
   ArrowLeft,
   Check,
   Eye,
   EyeSlash,
-  Student,
-  Chalkboard,
-  Users,
-  ShieldCheck,
 } from "@phosphor-icons/react";
 
 const LANGUAGES = [
@@ -28,23 +25,13 @@ const LANGUAGES = [
   { id: "Tamil", label: "தமிழ்", sub: "Tamil responses" },
 ];
 
-const ROLES = [
-  { id: "student", label: "Student", sub: "Personal learning companion", icon: Student },
-  { id: "parent", label: "Parent", sub: "Track your child's progress", icon: Users },
-  { id: "teacher", label: "Teacher", sub: "Manage assignments and students", icon: Chalkboard },
-  { id: "admin", label: "Admin", sub: "Platform-wide management", icon: ShieldCheck },
-];
-
-function getSteps(role: string) {
-  if (role === "student") return ["Your Name", "Class", "Focus Subject", "Language", "Role", "Password"];
-  return ["Your Name", "Language", "Role", "Password"];
+function getSteps() {
+  return ["Your Name", "Class", "Focus Subject", "Language", "Password"];
 }
 
 function OnboardForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const preRole = searchParams.get("role") || "student";
-  const validRole = preRole in ROLE_CONFIG ? preRole : "student";
+  const validRole = "student";
 
   const { setUser } = useUser();
   const [form, setForm] = useState({
@@ -64,7 +51,7 @@ function OnboardForm() {
   const [pwError, setPwError] = useState("");
 
   const isStudent = form.role === "student";
-  const STEPS = getSteps(form.role);
+  const STEPS = getSteps();
   const totalSteps = STEPS.length;
 
   const levels = getLevels();
@@ -120,13 +107,13 @@ function OnboardForm() {
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
-    background: "#0c0c0d",
-    border: "1px solid #23252a",
+    background: "#fbfdfb",
+    border: "1px solid #dce5df",
     borderRadius: 12,
     padding: "12px 16px",
     fontSize: 15,
-    fontFamily: "var(--font-plus-jakarta-sans), system-ui, sans-serif",
-    color: "#f7f8f8",
+    fontFamily: "Inter, system-ui, sans-serif",
+    color: "#17201c",
     outline: "none",
     boxSizing: "border-box",
     transition: "border-color 0.15s, box-shadow 0.15s",
@@ -134,30 +121,30 @@ function OnboardForm() {
 
   const renderStep = () => {
     const nameIdx = 0;
-    const classIdx = isStudent ? 1 : -1;
-    const subjectIdx = isStudent ? 2 : -1;
-    const langIdx = isStudent ? 3 : 1;
-    const roleIdx = isStudent ? 4 : 2;
-    const pwIdx = isStudent ? 5 : 3;
+    const classIdx = 1;
+    const subjectIdx = 2;
+    const langIdx = 3;
+    const pwIdx = 4;
 
     if (step === nameIdx) {
       return (
         <div>
-          <h2 className="text-xl font-bold text-[#f7f8f8] mb-1 tracking-tight">What is your name?</h2>
-          <p className="text-xs text-[#8a8f98] mb-6">Sakhi will use this to personalize your learning journey.</p>
+          <h2 className="text-xl font-bold text-[#17201c] mb-1 tracking-tight">What is your name?</h2>
+          <p className="text-xs text-[#66716b] mb-6">Sakhi will use this to personalize your learning journey.</p>
           <input
             style={inputStyle}
+            aria-label="Full name"
             placeholder="Enter your full name"
             value={form.name}
             autoFocus
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             onKeyDown={(e) => e.key === "Enter" && form.name.trim() && go(1)}
             onFocus={(e) => {
-              e.target.style.borderColor = "#5e6ad2";
-              e.target.style.boxShadow = "0 0 0 2px rgba(94,106,210,0.2)";
+              e.target.style.borderColor = "#059669";
+              e.target.style.boxShadow = "0 0 0 3px rgba(5,150,105,0.16)";
             }}
             onBlur={(e) => {
-              e.target.style.borderColor = "#23252a";
+              e.target.style.borderColor = "#dce5df";
               e.target.style.boxShadow = "none";
             }}
           />
@@ -168,12 +155,12 @@ function OnboardForm() {
     if (step === classIdx) {
       return (
         <div>
-          <h2 className="text-xl font-bold text-[#f7f8f8] mb-1 tracking-tight">Hi {form.name}! Which grade?</h2>
-          <p className="text-xs text-[#8a8f98] mb-5">We will align topics directly with your NCERT curriculum.</p>
+          <h2 className="text-xl font-bold text-[#17201c] mb-1 tracking-tight">Hi {form.name}! Which grade?</h2>
+          <p className="text-xs text-[#66716b] mb-5">We will align topics directly with your NCERT curriculum.</p>
           <div className="flex flex-col gap-4">
             {levels.map((level) => (
               <div key={level.id}>
-                <p className="text-[11px] font-semibold text-[#62666d] uppercase tracking-wider mb-2">
+                <p className="text-[11px] font-semibold text-[#7b867f] uppercase tracking-wider mb-2">
                   {level.label}
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -186,9 +173,9 @@ function OnboardForm() {
                         onClick={() => setForm((f) => ({ ...f, class_: cls }))}
                         className="px-3.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all"
                         style={{
-                          background: isSelected ? "rgba(94,106,210,0.18)" : "#0c0c0d",
-                          border: isSelected ? "1px solid #5e6ad2" : "1px solid #23252a",
-                          color: isSelected ? "#828fff" : "#8a8f98",
+                          background: isSelected ? "#e4f5eb" : "#ffffff",
+                          border: isSelected ? "1px solid #059669" : "1px solid #dce5df",
+                          color: isSelected ? "#047857" : "#425148",
                         }}
                       >
                         {cls === "KG1" || cls === "KG2" ? cls : `Class ${cls}`}
@@ -206,8 +193,8 @@ function OnboardForm() {
     if (step === subjectIdx) {
       return (
         <div>
-          <h2 className="text-xl font-bold text-[#f7f8f8] mb-1 tracking-tight">Which subject needs extra focus?</h2>
-          <p className="text-xs text-[#8a8f98] mb-5">Sakhi will dedicate more Socratic scaffolding to this area.</p>
+          <h2 className="text-xl font-bold text-[#17201c] mb-1 tracking-tight">Which subject needs extra focus?</h2>
+          <p className="text-xs text-[#66716b] mb-5">Sakhi will dedicate more Socratic scaffolding to this area.</p>
           <div className="flex flex-wrap gap-2">
             {subjects.map((s) => {
               const isSelected = form.weak_subject === s.label;
@@ -218,9 +205,9 @@ function OnboardForm() {
                   onClick={() => setForm((f) => ({ ...f, weak_subject: s.label }))}
                   className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium cursor-pointer transition-all"
                   style={{
-                    background: isSelected ? "rgba(94,106,210,0.18)" : "#0c0c0d",
-                    border: isSelected ? "1px solid #5e6ad2" : "1px solid #23252a",
-                    color: isSelected ? "#828fff" : "#8a8f98",
+                    background: isSelected ? "#e4f5eb" : "#ffffff",
+                    border: isSelected ? "1px solid #059669" : "1px solid #dce5df",
+                    color: isSelected ? "#047857" : "#425148",
                   }}
                 >
                   <span>{s.icon}</span>
@@ -237,8 +224,8 @@ function OnboardForm() {
     if (step === langIdx) {
       return (
         <div>
-          <h2 className="text-xl font-bold text-[#f7f8f8] mb-1 tracking-tight">Preferred study language?</h2>
-          <p className="text-xs text-[#8a8f98] mb-5">You can switch languages anytime during your session.</p>
+          <h2 className="text-xl font-bold text-[#17201c] mb-1 tracking-tight">Preferred study language?</h2>
+          <p className="text-xs text-[#66716b] mb-5">You can switch languages anytime during your session.</p>
           <div className="flex flex-col gap-2">
             {LANGUAGES.map((l) => {
               const isSelected = form.language === l.id;
@@ -249,69 +236,18 @@ function OnboardForm() {
                   onClick={() => setForm((f) => ({ ...f, language: l.id }))}
                   className="flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all text-left"
                   style={{
-                    background: isSelected ? "rgba(94,106,210,0.14)" : "#0c0c0d",
-                    border: isSelected ? "1px solid #5e6ad2" : "1px solid #23252a",
+                    background: isSelected ? "#e4f5eb" : "#ffffff",
+                    border: isSelected ? "1px solid #059669" : "1px solid #dce5df",
                   }}
                 >
                   <div>
-                    <div className="text-sm font-semibold text-[#f7f8f8]">{l.label}</div>
-                    <div className="text-xs text-[#8a8f98]">{l.sub}</div>
+                    <div className="text-sm font-semibold text-[#17201c]">{l.label}</div>
+                    <div className="text-xs text-[#66716b]">{l.sub}</div>
                   </div>
                   {isSelected && (
                     <div
                       className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
-                      style={{ background: "#5e6ad2" }}
-                    >
-                      <Check size={12} weight="bold" color="#fff" />
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
-
-    if (step === roleIdx) {
-      return (
-        <div>
-          <h2 className="text-xl font-bold text-[#f7f8f8] mb-1 tracking-tight">Confirm account role</h2>
-          <p className="text-xs text-[#8a8f98] mb-5">Select the portal experience you require.</p>
-          <div className="flex flex-col gap-2">
-            {ROLES.map((r) => {
-              const isSelected = form.role === r.id;
-              const Icon = r.icon;
-              return (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => setForm((f) => ({ ...f, role: r.id }))}
-                  className="flex items-center justify-between p-3.5 rounded-xl cursor-pointer transition-all text-left"
-                  style={{
-                    background: isSelected ? "rgba(94,106,210,0.14)" : "#0c0c0d",
-                    border: isSelected ? "1px solid #5e6ad2" : "1px solid #23252a",
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                      style={{
-                        background: isSelected ? "rgba(94,106,210,0.2)" : "rgba(255,255,255,0.04)",
-                        border: isSelected ? "1px solid rgba(94,106,210,0.3)" : "1px solid #23252a",
-                      }}
-                    >
-                      <Icon size={16} style={{ color: isSelected ? "#828fff" : "#8a8f98" }} />
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-[#f7f8f8]">{r.label}</div>
-                      <div className="text-xs text-[#8a8f98]">{r.sub}</div>
-                    </div>
-                  </div>
-                  {isSelected && (
-                    <div
-                      className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
-                      style={{ background: "#5e6ad2" }}
+                      style={{ background: "#059669" }}
                     >
                       <Check size={12} weight="bold" color="#fff" />
                     </div>
@@ -327,12 +263,13 @@ function OnboardForm() {
     if (step === pwIdx) {
       return (
         <div>
-          <h2 className="text-xl font-bold text-[#f7f8f8] mb-1 tracking-tight">Create a password</h2>
-          <p className="text-xs text-[#8a8f98] mb-5">You will use this to sign into your account.</p>
+          <h2 className="text-xl font-bold text-[#17201c] mb-1 tracking-tight">Create a password</h2>
+          <p className="text-xs text-[#66716b] mb-5">You will use this to sign into your account.</p>
           <div className="flex flex-col gap-3.5">
             <div className="relative">
               <input
                 style={{ ...inputStyle, paddingRight: 40 }}
+                aria-label="Password"
                 type={showPw ? "text" : "password"}
                 placeholder="Password (min 8 chars)"
                 value={form.password}
@@ -341,18 +278,18 @@ function OnboardForm() {
                   setPwError("");
                 }}
                 onFocus={(e) => {
-                  e.target.style.borderColor = "#5e6ad2";
-                  e.target.style.boxShadow = "0 0 0 2px rgba(94,106,210,0.2)";
+                  e.target.style.borderColor = "#059669";
+                  e.target.style.boxShadow = "0 0 0 3px rgba(5,150,105,0.16)";
                 }}
                 onBlur={(e) => {
-                  e.target.style.borderColor = "#23252a";
+                  e.target.style.borderColor = "#dce5df";
                   e.target.style.boxShadow = "none";
                 }}
               />
               <button
                 type="button"
                 onClick={() => setShowPw((s) => !s)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer p-1 text-[#62666d]"
+                className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer p-1 text-[#7b867f]"
                 aria-label="Toggle password visibility"
               >
                 {showPw ? <EyeSlash size={16} /> : <Eye size={16} />}
@@ -361,6 +298,7 @@ function OnboardForm() {
             <div className="relative">
               <input
                 style={{ ...inputStyle, paddingRight: 40 }}
+                aria-label="Confirm password"
                 type={showConfirm ? "text" : "password"}
                 placeholder="Confirm password"
                 value={form.confirmPassword}
@@ -369,18 +307,18 @@ function OnboardForm() {
                   setPwError("");
                 }}
                 onFocus={(e) => {
-                  e.target.style.borderColor = "#5e6ad2";
-                  e.target.style.boxShadow = "0 0 0 2px rgba(94,106,210,0.2)";
+                  e.target.style.borderColor = "#059669";
+                  e.target.style.boxShadow = "0 0 0 3px rgba(5,150,105,0.16)";
                 }}
                 onBlur={(e) => {
-                  e.target.style.borderColor = "#23252a";
+                  e.target.style.borderColor = "#dce5df";
                   e.target.style.boxShadow = "none";
                 }}
               />
               <button
                 type="button"
                 onClick={() => setShowConfirm((s) => !s)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer p-1 text-[#62666d]"
+                className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer p-1 text-[#7b867f]"
                 aria-label="Toggle confirm password visibility"
               >
                 {showConfirm ? <EyeSlash size={16} /> : <Eye size={16} />}
@@ -399,27 +337,30 @@ function OnboardForm() {
 
   return (
     <div
-      className="min-h-[100dvh] w-full flex flex-col items-center justify-center px-4 py-12 relative"
+      className="onboard-page min-h-[100dvh] w-full flex flex-col items-center justify-center px-4 py-12 relative"
       style={{
-        background: "#010102",
-        color: "#f7f8f8",
-        fontFamily: "var(--font-plus-jakarta-sans), system-ui, sans-serif",
+        background: "#f5f7f5",
+        color: "#17201c",
+        fontFamily: "Inter, system-ui, sans-serif",
       }}
     >
+      <Link href="/" className="onboard-brand" aria-label="AI Sakhi home">
+        <BrandMark size="sm" showLabel />
+      </Link>
       {/* Back to Home */}
       <Link
         href="/"
         className="absolute top-6 left-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
         style={{
-          background: "#0f1011",
-          border: "1px solid #23252a",
-          color: "#8a8f98",
+          background: "#ffffff",
+          border: "1px solid #e1e8e3",
+          color: "#66716b",
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.color = "#f7f8f8";
+          e.currentTarget.style.color = "#17201c";
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.color = "#8a8f98";
+          e.currentTarget.style.color = "#66716b";
         }}
       >
         <ArrowLeft size={14} /> Back to Home
@@ -431,17 +372,17 @@ function OnboardForm() {
           <div
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium mb-2"
             style={{
-              background: "rgba(94,106,210,0.12)",
-              border: "1px solid rgba(94,106,210,0.25)",
-              color: "#828fff",
+                background: "#e4f5eb",
+                border: "1px solid #c6e8d3",
+                color: "#047857",
             }}
           >
             <span>{cfg.emoji}</span>
             <span>Creating {cfg.label} Account</span>
           </div>
-          <p className="text-xs text-[#8a8f98]">
+        <p className="text-xs text-[#66716b]">
             Already have an account?{" "}
-            <Link href={`/login?role=${form.role}`} className="font-medium hover:underline text-[#5e6ad2]">
+            <Link href={`/login?role=${form.role}`} className="font-medium hover:underline text-[#047857]">
               Sign in →
             </Link>
           </p>
@@ -455,7 +396,7 @@ function OnboardForm() {
               className="h-1 rounded-full transition-all duration-300"
               style={{
                 width: i === step ? 28 : 10,
-                background: i <= step ? "#5e6ad2" : "#23252a",
+                background: i <= step ? "#059669" : "#d9e3dc",
               }}
             />
           ))}
@@ -465,21 +406,21 @@ function OnboardForm() {
         <div
           style={{
             padding: 6,
-            background: "#0c0c0d",
-            border: "1px solid #23252a",
+            background: "#edf3ee",
+            border: "1px solid #dce7df",
             borderRadius: 24,
           }}
         >
           <div
             style={{
-              background: "#0f1011",
+              background: "#ffffff",
               borderRadius: 19,
-              border: "1px solid #1a1b1d",
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+              border: "1px solid #e4ebe6",
+              boxShadow: "0 18px 50px rgba(30, 65, 45, .08)",
               padding: "2.25rem 2rem",
             }}
           >
-            <div className="text-[11px] font-semibold text-[#5e6ad2] uppercase tracking-wider mb-2">
+            <div className="text-[11px] font-semibold text-[#047857] uppercase tracking-wider mb-2">
               Step {step + 1} of {totalSteps} · {STEPS[step]}
             </div>
 
@@ -497,19 +438,19 @@ function OnboardForm() {
             </AnimatePresence>
 
             {/* Actions */}
-            <div className="flex items-center justify-between mt-8 pt-5" style={{ borderTop: "1px solid #1e2024" }}>
+            <div className="flex items-center justify-between mt-8 pt-5" style={{ borderTop: "1px solid #e6ece8" }}>
               {step > 0 ? (
                 <button
                   type="button"
                   onClick={() => go(-1)}
-                  className="flex items-center gap-1.5 text-xs text-[#8a8f98] hover:text-[#f7f8f8] cursor-pointer transition-colors"
+                  className="flex items-center gap-1.5 text-xs text-[#66716b] hover:text-[#17201c] cursor-pointer transition-colors"
                 >
                   <ArrowLeft size={13} /> Back
                 </button>
               ) : (
                 <Link
                   href="/"
-                  className="flex items-center gap-1.5 text-xs text-[#62666d] hover:text-[#8a8f98] transition-colors"
+                  className="flex items-center gap-1.5 text-xs text-[#66716b] hover:text-[#17201c] transition-colors"
                 >
                   <ArrowLeft size={13} /> Change role
                 </Link>
@@ -520,16 +461,16 @@ function OnboardForm() {
                   type="button"
                   onClick={submit}
                   disabled={loading}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-semibold cursor-pointer transition-all active:scale-[0.98] disabled:opacity-50"
+                  className="onboard-action flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-semibold cursor-pointer transition-all active:scale-[0.98] disabled:opacity-50"
                   style={{
-                    background: "#5e6ad2",
+                    background: "#059669",
                     color: "#ffffff",
                   }}
                   onMouseEnter={(e) => {
-                    if (!e.currentTarget.disabled) e.currentTarget.style.background = "#828fff";
+                    if (!e.currentTarget.disabled) e.currentTarget.style.background = "#047857";
                   }}
                   onMouseLeave={(e) => {
-                    if (!e.currentTarget.disabled) e.currentTarget.style.background = "#5e6ad2";
+                    if (!e.currentTarget.disabled) e.currentTarget.style.background = "#047857";
                   }}
                 >
                   {loading ? "Creating..." : "Start Learning"}
@@ -540,16 +481,16 @@ function OnboardForm() {
                   type="button"
                   onClick={() => go(1)}
                   disabled={!canNext()}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-semibold cursor-pointer transition-all active:scale-[0.98] disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="onboard-action flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-semibold cursor-pointer transition-all active:scale-[0.98] disabled:opacity-30 disabled:cursor-not-allowed"
                   style={{
-                    background: "#5e6ad2",
+                    background: "#059669",
                     color: "#ffffff",
                   }}
                   onMouseEnter={(e) => {
-                    if (!e.currentTarget.disabled) e.currentTarget.style.background = "#828fff";
+                    if (!e.currentTarget.disabled) e.currentTarget.style.background = "#047857";
                   }}
                   onMouseLeave={(e) => {
-                    if (!e.currentTarget.disabled) e.currentTarget.style.background = "#5e6ad2";
+                    if (!e.currentTarget.disabled) e.currentTarget.style.background = "#047857";
                   }}
                 >
                   Continue <ArrowRight size={13} weight="bold" />
@@ -569,7 +510,7 @@ export default function OnboardPage() {
       fallback={
         <div
           className="min-h-screen flex items-center justify-center"
-          style={{ background: "#010102" }}
+          style={{ background: "#f5f7f5" }}
         >
           <div className="w-8 h-8 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
         </div>

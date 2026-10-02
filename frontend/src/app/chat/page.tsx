@@ -681,7 +681,7 @@ export default function ChatPage() {
       <TourGuide />
       <Sidebar />
       <main className="main-content" style={{ flexDirection: "row" }}>
-        <aside style={{ width: 300, borderRight: "1px solid var(--border-subtle)", background: "#fafaf9", padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+        <aside className="chat-tools-panel" style={{ width: 300, borderRight: "1px solid var(--border-subtle)", background: "var(--bg-app)", padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
           <button className="btn btn-primary btn-full" onClick={startNewSession} style={{ justifyContent: "center" }}>
             <Plus size={15} /> New Chat
           </button>
@@ -859,7 +859,7 @@ export default function ChatPage() {
           </div>
         </aside>
 
-        <section style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
+        <section className="chat-conversation" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
           <div style={{ flex: 1, overflowY: "auto", padding: "24px 32px" }}>
             <AnimatePresence>
               {showEmpty && messages.length === 0 && !typing && !loadingHistory ? (

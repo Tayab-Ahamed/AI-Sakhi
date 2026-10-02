@@ -7,23 +7,13 @@ import Link from "next/link";
 import { useUser } from "@/lib/user-context";
 import { getRoleLandingPage, ROLE_CONFIG } from "@/lib/auth";
 import { api } from "@/lib/api";
+import { BrandMark } from "@/components/BrandMark";
 import {
-  Student,
-  Chalkboard,
-  Users,
-  ShieldCheck,
   ArrowRight,
   ArrowLeft,
   Eye,
   EyeSlash,
 } from "@phosphor-icons/react";
-
-const ROLE_ICONS: Record<string, React.ElementType> = {
-  student: Student,
-  teacher: Chalkboard,
-  parent: Users,
-  admin: ShieldCheck,
-};
 
 function LoginForm() {
   const router = useRouter();
@@ -31,7 +21,6 @@ function LoginForm() {
   const rawRole = searchParams.get("role") || "student";
   const [selectedRole, setSelectedRole] = useState(rawRole in ROLE_CONFIG ? rawRole : "student");
   const cfg = ROLE_CONFIG[selectedRole] || ROLE_CONFIG.student;
-  const RoleIcon = ROLE_ICONS[selectedRole] || Student;
 
   const { setUser } = useUser();
   const [form, setForm] = useState({ name: "", password: "" });
@@ -64,11 +53,11 @@ function LoginForm() {
 
   return (
     <div
-      className="min-h-[100dvh] w-full flex flex-col items-center justify-center px-4 py-12 relative"
+      className="auth-page min-h-[100dvh] w-full flex flex-col items-center justify-center px-4 py-12 relative"
       style={{
         background: "#010102",
         color: "#f7f8f8",
-        fontFamily: "var(--font-plus-jakarta-sans), system-ui, sans-serif",
+        fontFamily: "Inter, system-ui, sans-serif",
       }}
     >
       {/* Back button */}
@@ -95,7 +84,7 @@ function LoginForm() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.32, 0.72, 0, 1] }}
-        className="w-full max-w-md"
+        className="auth-card w-full max-w-md"
         style={{
           padding: 6,
           background: "#0c0c0d",
@@ -114,15 +103,7 @@ function LoginForm() {
         >
           {/* Header */}
           <div className="flex flex-col items-center text-center mb-8">
-            <div
-              className="w-12 h-12 rounded-xl flex items-center justify-center mb-4"
-              style={{
-                background: "rgba(94,106,210,0.12)",
-                border: "1px solid rgba(94,106,210,0.25)",
-              }}
-            >
-              <RoleIcon size={24} weight="light" style={{ color: "#5e6ad2" }} />
-            </div>
+            <BrandMark size="md" showLabel />
 
             <h1
               className="text-2xl font-bold tracking-tight mb-1"
@@ -134,7 +115,7 @@ function LoginForm() {
 
             {/* Role switcher pills */}
             <div
-              className="flex items-center gap-1 p-1 rounded-full mt-5 max-w-full overflow-x-auto"
+          className="auth-role-switcher flex items-center gap-1 p-1 rounded-full mt-5 max-w-full overflow-x-auto"
               style={{
                 background: "#0c0c0d",
                 border: "1px solid #1e2024",
@@ -191,11 +172,12 @@ function LoginForm() {
               </label>
               <input
                 type="text"
+                aria-label="Your name"
                 placeholder="Enter your name"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 autoFocus
-                className="w-full px-3.5 py-2.5 rounded-lg text-sm transition-all outline-none"
+                className="auth-field w-full px-3.5 py-2.5 rounded-lg text-sm transition-all outline-none"
                 style={{
                   background: "#0c0c0d",
                   border: "1px solid #23252a",
@@ -222,10 +204,11 @@ function LoginForm() {
               <div className="relative">
                 <input
                   type={showPw ? "text" : "password"}
+                  aria-label="Password"
                   placeholder="Enter your password"
                   value={form.password}
                   onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 pr-10 rounded-lg text-sm transition-all outline-none"
+                  className="auth-field w-full px-3.5 py-2.5 pr-10 rounded-lg text-sm transition-all outline-none"
                   style={{
                     background: "#0c0c0d",
                     border: "1px solid #23252a",
@@ -255,7 +238,7 @@ function LoginForm() {
             <button
               type="submit"
               disabled={loading || !form.name.trim() || !form.password}
-              className="mt-2 flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-medium transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="auth-submit mt-2 flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-medium transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
                 background: "#5e6ad2",
                 color: "#ffffff",
@@ -284,14 +267,11 @@ function LoginForm() {
             style={{ borderTop: "1px solid #1e2024" }}
           >
             <p style={{ color: "#62666d" }}>
-              New to AI Sakhi?{" "}
-              <Link
-                href={`/onboard?role=${selectedRole}`}
-                className="font-medium hover:underline"
-                style={{ color: "#5e6ad2" }}
-              >
-                Create {cfg.label} account →
-              </Link>
+              {selectedRole === "student" ? (
+                <>New to AI Sakhi?{" "}<Link href="/onboard" className="font-medium hover:underline" style={{ color: "#5e6ad2" }}>Create a student account →</Link></>
+              ) : (
+                "Staff and guardian accounts are created by your school administrator."
+              )}
             </p>
           </div>
         </div>

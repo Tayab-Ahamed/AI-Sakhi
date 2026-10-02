@@ -14,6 +14,7 @@ import { api } from "@/lib/api";
 import { useAccessibility } from "@/lib/accessibility-context";
 import { useUser } from "@/lib/user-context";
 import { ROLE_CONFIG } from "@/lib/auth";
+import { BrandMark } from "@/components/BrandMark";
 import NotificationCenter from "@/components/NotificationCenter";
 import { toggleTheme, initTheme, getTheme, type Theme } from "@/lib/theme";
 
@@ -173,10 +174,7 @@ export default function Sidebar() {
 
         {/* ── Logo ── */}
         <div className="sidebar-logo" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 22 }}>🌸</span>
-            <span>AI Sakhi</span>
-          </div>
+          <BrandMark size="sm" showLabel />
           {mobileOpen && (
             <button
               type="button"

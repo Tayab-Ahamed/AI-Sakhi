@@ -136,6 +136,9 @@ def _m006_ai_evaluations(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(ai_evaluations)").fetchall()}
+    if "run_id" not in columns:
+        conn.execute("ALTER TABLE ai_evaluations ADD COLUMN run_id TEXT")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_evals_run ON ai_evaluations(run_id)")
 
 
@@ -203,7 +206,12 @@ def run_migrations(conn: sqlite3.Connection) -> list[int]:
             )
             conn.commit()
             applied.append(migration.version)
-            logger.info("migration_applied", extra={"version": migration.version, "name": migration.name})
+            # `name` is reserved by Python's LogRecord, so keep the migration
+            # label under an application-specific field.
+            logger.info(
+                "migration_applied",
+                extra={"version": migration.version, "migration_name": migration.name},
+            )
         except Exception:
             conn.rollback()
             logger.exception("migration_failed version=%s name=%s", migration.version, migration.name)

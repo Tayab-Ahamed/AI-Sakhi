@@ -20,17 +20,26 @@ type UserContextValue = {
 const UserContext = createContext<UserContextValue | null>(null);
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUserState] = useState<SakhiUser | null>(() => getStoredUser());
-  const [auth, setAuthState] = useState<SakhiAuth | null>(() => {
-    const stored = getStoredAuth();
-    if (stored?.token && isTokenExpired(stored.token)) {
-      saveStoredAuth(null);
-      return null;
-    }
-    return stored;
-  });
+  // Keep server and first client render identical. Browser storage is loaded
+  // after mount so authenticated shells do not cause hydration mismatches.
+  const [user, setUserState] = useState<SakhiUser | null>(null);
+  const [auth, setAuthState] = useState<SakhiAuth | null>(null);
   const [sessionId] = useState(() => getSessionId());
-  const isReady = typeof window !== "undefined";
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    const storedUser = getStoredUser();
+    const storedAuth = getStoredAuth();
+    queueMicrotask(() => {
+      if (storedAuth?.token && isTokenExpired(storedAuth.token)) {
+        saveStoredAuth(null);
+      } else {
+        setAuthState(storedAuth);
+      }
+      setUserState(storedUser);
+      setIsReady(true);
+    });
+  }, []);
 
   useEffect(() => {
     if (!auth?.token) return;

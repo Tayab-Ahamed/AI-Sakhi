@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { useUser } from "@/lib/user-context";
@@ -45,7 +45,11 @@ export default function PracticePaperPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  if (isReady && !user) { router.push("/onboard"); return null; }
+  useEffect(() => {
+    if (isReady && !user) router.push("/onboard");
+  }, [isReady, user, router]);
+
+  if (!isReady || !user) return null;
 
   const subjects = user ? getSubjectsForClass(user.class_).map(s => s.label) : ["Science", "Mathematics", "Social Science", "English", "Hindi"];
 
