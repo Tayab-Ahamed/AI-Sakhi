@@ -102,6 +102,9 @@ type SpeechWindow = Window & {
 };
 
 const SIMPLIFY_LABELS = ["Simpler", "Even Simpler", "Like I'm 5"];
+import { getLocalStore } from "@/components/MyDataCard";
+import { getDeviceId } from "@/lib/store/local-store";
+
 const CHAT_STORAGE_KEY = "sakhi_chat_session_id";
 const AUTO_SPEAK_STORAGE_KEY = "sakhi_auto_speak";
 const VOICE_STORAGE_KEY = "sakhi_voice_uri";
@@ -488,6 +491,20 @@ export default function ChatPage() {
               m.id === aiMsgId ? { ...m, text: fullText, time: getTimeLabel() } : m
             )
           );
+          if (user?.user_id) {
+            const now = Date.now();
+            void getLocalStore().saveChat({
+              id: chatSessionId,
+              userId: user.user_id,
+              title: text.trim().slice(0, 48),
+              updatedAt: now,
+              deviceId: getDeviceId(),
+              messages: [
+                { role: "user", content: text.trim(), at: now - 1 },
+                { role: "assistant", content: fullText, at: now },
+              ],
+            }).catch(() => undefined);
+          }
           if (user?.user_id) await refreshSessions(user.user_id);
           if (autoSpeak) speakText(fullText);
           setTyping(false);

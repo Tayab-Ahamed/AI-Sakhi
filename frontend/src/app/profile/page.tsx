@@ -8,6 +8,7 @@ import { useUser } from "@/lib/user-context";
 import { SakhiLanguage } from "@/lib/user";
 import { Edit2, Check, X } from "lucide-react";
 import { api } from "@/lib/api";
+import MyDataCard from "@/components/MyDataCard";
 
 const LANGUAGES = ["English", "Hinglish", "Hindi", "Kannada", "Tamil"];
 
@@ -156,6 +157,7 @@ export default function ProfilePage() {
               ))}
             </div>
           </div>
+          <MyDataCard userId={user.user_id} />
         </div>
       </div>
     </div>
