@@ -260,8 +260,15 @@ async def security_middleware(request: Request, call_next):
             if len(raw) > settings.max_json_body_bytes:
                 return _deny(413, "Request body too large")
 
+            original_receive = request._receive
+            has_read_body = False
+
             async def receive():
-                return {"type": "http.request", "body": raw, "more_body": False}
+                nonlocal has_read_body
+                if not has_read_body:
+                    has_read_body = True
+                    return {"type": "http.request", "body": raw, "more_body": False}
+                return await original_receive()
 
             request._receive = receive
 

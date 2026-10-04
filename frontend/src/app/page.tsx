@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import "./landing-mobile.css";
 import { motion } from "framer-motion";
-import { ArrowRight, BookOpenText, Brain, Chalkboard, Check, ChartLineUp, Clock, GraduationCap, ShieldCheck, Users } from "@phosphor-icons/react";
+import { useState } from "react";
+import { ArrowRight, BookOpenText, Brain, Chalkboard, Check, ChartLineUp, Clock, GraduationCap, List, ShieldCheck, Users, X } from "@phosphor-icons/react";
 import { BrandMark } from "@/components/BrandMark";
 import { useUser } from "@/lib/user-context";
 import { getRoleLandingPage } from "@/lib/auth";
@@ -24,13 +26,22 @@ const capabilities = [
 
 export default function Home() {
   const { user } = useUser();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <main className="landing-page">
       <header className="landing-nav">
         <Link href="/" className="landing-brand" aria-label="AI Sakhi home"><BrandMark size="sm" showLabel /></Link>
         <nav className="landing-links" aria-label="Main navigation"><a href="#what-you-get">What you get</a><a href="#how-it-works">How it works</a><a href="#for-everyone">For everyone</a></nav>
-        <Link href={user ? getRoleLandingPage(user.role) : "/login"} className="landing-button landing-button-primary">{user ? "Open dashboard" : "Start learning"} <ArrowRight size={15} /></Link>
+        <Link href={user ? getRoleLandingPage(user.role) : "/login"} className="landing-button landing-button-primary landing-nav-cta">{user ? "Open dashboard" : "Start learning"} <ArrowRight size={15} /></Link>
+        <button type="button" className="landing-menu-toggle" aria-label={menuOpen ? "Close menu" : "Open menu"} aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>{menuOpen ? <X size={20} /> : <List size={20} />}</button>
+        {menuOpen && (
+          <nav className="landing-mobile-menu" aria-label="Mobile navigation">
+            <a href="#what-you-get" onClick={() => setMenuOpen(false)}>What you get</a>
+            <a href="#how-it-works" onClick={() => setMenuOpen(false)}>How it works</a>
+            <a href="#for-everyone" onClick={() => setMenuOpen(false)}>For everyone</a>
+          </nav>
+        )}
       </header>
 
       <section className="landing-hero landing-container">

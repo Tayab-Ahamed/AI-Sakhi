@@ -904,6 +904,19 @@ class StreamChatRequest(BaseModel):
     organization_id: Optional[int] = None
 
 
+class SafeStreamingResponse(StreamingResponse):
+    """StreamingResponse resilient to Starlette BaseHTTPMiddleware keep-alive disconnect quirks."""
+    async def listen_for_disconnect(self, receive):
+        try:
+            while True:
+                msg = await receive()
+                if msg["type"] == "http.disconnect":
+                    break
+        except Exception:
+            import anyio
+            await anyio.sleep_forever()
+
+
 @app.post("/chat/stream")
 def api_chat_stream(req: StreamChatRequest):
     """Stream chat response token-by-token using Server-Sent Events."""
@@ -934,7 +947,7 @@ def api_chat_stream(req: StreamChatRequest):
             yield _frame({"type": "error", "message": "The tutor is unavailable right now. Please try again."})
         yield "data: [DONE]\n\n"
 
-    return StreamingResponse(
+    return SafeStreamingResponse(
         event_generator(),
         media_type="text/event-stream",
         headers={

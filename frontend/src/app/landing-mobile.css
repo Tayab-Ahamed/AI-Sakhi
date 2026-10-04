@@ -1,0 +1,10 @@
+.landing-menu-toggle { display: none; align-items: center; justify-content: center; width: 40px; height: 40px; color: #17201c; background: #fff; border: 1px solid #dfe4e1; border-radius: 9px; cursor: pointer; }
+.landing-mobile-menu { position: absolute; top: calc(100% + 8px); left: 0; right: 0; display: grid; padding: 8px; background: rgba(255,255,255,.98); border: 1px solid #e5e7eb; border-radius: 14px; box-shadow: 0 16px 36px rgba(28,28,30,.12); }
+.landing-mobile-menu a { padding: 14px 12px; color: #17201c; text-decoration: none; font-size: 15px; font-weight: 600; border-radius: 9px; }
+.landing-mobile-menu a:hover { background: #e4f5eb; color: #047857; }
+@media (max-width: 900px) {
+  .landing-menu-toggle { display: inline-flex; }
+  .landing-nav { gap: 10px; }
+  .landing-nav-cta { margin-left: auto; }
+}
+@media (min-width: 901px) { .landing-mobile-menu { display: none; } }
