@@ -15,13 +15,16 @@ services:
       SAKHI_JWT_SECRET: ${SAKHI_JWT_SECRET:?SAKHI_JWT_SECRET is required}
       SAKHI_ENV: production
       SAKHI_ENABLE_DEMO_SEED: "false"
+      SAKHI_AI_APPROVAL_MODE: ${SAKHI_AI_APPROVAL_MODE:-unconfigured}
+      SAKHI_PRIVACY_POLICY_VERSION: ${SAKHI_PRIVACY_POLICY_VERSION:-}
+      SAKHI_CHAT_RETENTION_DAYS: ${SAKHI_CHAT_RETENTION_DAYS:-0}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS is required}
       DB_PATH: /app/data/sakhi.db
       CHROMA_PATH: /app/chroma_db
       RAG_MAX_DISTANCE: ${RAG_MAX_DISTANCE:-0.72}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       SENTRY_DSN: ${SENTRY_DSN:-}
-      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
     restart: unless-stopped
     stop_grace_period: 30s
     healthcheck:
@@ -32,11 +35,11 @@ services:
       retries: 3
 
   frontend:
+    environment:
+      BACKEND_URL: http://backend:8000
     build:
       context: ./frontend
       dockerfile: ../Dockerfile.frontend
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:

@@ -2,14 +2,15 @@
 Quiz generation and evaluation for AI Sakhi.
 Generates 5-question MCQs via Groq and evaluates student answers.
 """
+
 from __future__ import annotations
 
 import json
 import re
 
-from backend.llm import complete
 from backend.language import is_text_compatible_with_language, language_instruction, normalize_language
 from backend.learning_engine import classify_misconception
+from backend.llm import complete
 
 QUIZ_SYSTEM = (
     "You are a quiz generator for Indian school students. "
@@ -17,9 +18,9 @@ QUIZ_SYSTEM = (
 )
 
 DIFFICULTY_INSTRUCTIONS = {
-    "easy":   "Questions should test basic recall and definitions. Use straightforward language. Each question should have one obviously correct answer.",
+    "easy": "Questions should test basic recall and definitions. Use straightforward language. Each question should have one obviously correct answer.",
     "medium": "Questions should test understanding and application. Include scenario-based questions with plausible distractors.",
-    "hard":   "Questions should test analysis, reasoning, and deep understanding. Include multi-step logic and conceptual traps.",
+    "hard": "Questions should test analysis, reasoning, and deep understanding. Include multi-step logic and conceptual traps.",
 }
 
 QUIZ_PROMPT = """Generate exactly 5 multiple-choice questions about "{topic}" for a Class {class_} student.
@@ -53,7 +54,9 @@ Rules:
 """
 
 
-def generate_quiz(topic: str, class_: str = "8", language: str = "English", difficulty: str = "medium") -> dict:
+def generate_quiz(
+    topic: str, class_: str = "8", language: str = "English", difficulty: str = "medium"
+) -> dict:
     """Generate a 5-question MCQ quiz. Returns dict with 'success' and 'quiz' or 'error'."""
     selected_language = normalize_language(language)
     diff = difficulty.lower() if difficulty.lower() in DIFFICULTY_INSTRUCTIONS else "medium"
@@ -65,6 +68,7 @@ def generate_quiz(topic: str, class_: str = "8", language: str = "English", diff
         difficulty_upper=diff.upper(),
         difficulty_instruction=DIFFICULTY_INSTRUCTIONS[diff],
     )
+
     def _call(messages: list[dict]) -> dict:
         result = complete(messages, temperature=0.5, max_tokens=1800, tag="quiz_gen")
         raw = result.text.strip()
@@ -81,24 +85,25 @@ def generate_quiz(topic: str, class_: str = "8", language: str = "English", diff
         visible_text = " ".join(
             [quiz.get("topic", "")]
             + [
-                " ".join([
-                    q.get("question", ""),
-                    " ".join(q.get("options", {}).values()),
-                    q.get("hint", ""),
-                    q.get("explanation", ""),
-                ])
+                " ".join(
+                    [
+                        q.get("question", ""),
+                        " ".join(q.get("options", {}).values()),
+                        q.get("hint", ""),
+                        q.get("explanation", ""),
+                    ]
+                )
                 for q in quiz.get("questions", [])
             ]
         )
         if not is_text_compatible_with_language(visible_text, selected_language):
-            retry_messages = messages + [
+            retry_messages = [
+                *messages,
                 {
                     "role": "user",
-                    "content": (
-                        f"The quiz text was not fully in {selected_language}. "
-                        f"Regenerate the full quiz in proper {selected_language} only, including the correct script."
-                    ),
-                }
+                    "content": f"The quiz text was not fully in {selected_language}. "
+                    f"Regenerate the full quiz in proper {selected_language} only, including the correct script.",
+                },
             ]
             quiz = _call(retry_messages)
         return {"success": True, "quiz": quiz}
@@ -117,15 +122,33 @@ def evaluate_answer(question: dict, user_answer: str, language: str = "English")
     explanation = question.get("explanation", "")
 
     if selected_language == "Hindi":
-        feedback = f"बहुत बढ़िया! {explanation}" if is_correct else f"लगभग सही! सही उत्तर **{correct}** है। {explanation}"
+        feedback = (
+            f"बहुत बढ़िया! {explanation}"
+            if is_correct
+            else f"लगभग सही! सही उत्तर **{correct}** है। {explanation}"
+        )
     elif selected_language == "Kannada":
-        feedback = f"ಚೆನ್ನಾಗಿದೆ! {explanation}" if is_correct else f"ಬಹುತೇಕ ಸರಿಯೇ! ಸರಿಯಾದ ಉತ್ತರ **{correct}**. {explanation}"
+        feedback = (
+            f"ಚೆನ್ನಾಗಿದೆ! {explanation}" if is_correct else f"ಬಹುತೇಕ ಸರಿಯೇ! ಸರಿಯಾದ ಉತ್ತರ **{correct}**. {explanation}"
+        )
     elif selected_language == "Tamil":
-        feedback = f"சிறப்பு! {explanation}" if is_correct else f"கிட்டத்தட்ட சரி! சரியான பதில் **{correct}**. {explanation}"
+        feedback = (
+            f"சிறப்பு! {explanation}"
+            if is_correct
+            else f"கிட்டத்தட்ட சரி! சரியான பதில் **{correct}**. {explanation}"
+        )
     elif selected_language == "Hinglish":
-        feedback = f"Bilkul sahi! {explanation}" if is_correct else f"Almost there! Sahi answer **{correct}** hai. {explanation}"
+        feedback = (
+            f"Bilkul sahi! {explanation}"
+            if is_correct
+            else f"Almost there! Sahi answer **{correct}** hai. {explanation}"
+        )
     else:
-        feedback = f"Correct! {explanation}" if is_correct else f"Almost there! The correct answer is **{correct}**. {explanation}"
+        feedback = (
+            f"Correct! {explanation}"
+            if is_correct
+            else f"Almost there! The correct answer is **{correct}**. {explanation}"
+        )
 
     misconception_type = None
     if not is_correct and given:
@@ -162,15 +185,17 @@ def evaluate_quiz_batch(
         if evaluated["is_correct"]:
             score += 1
         elif evaluated.get("misconception_type"):
-            misconceptions.append({
-                "question_id": qid,
-                "topic": topic,
-                "question": q.get("question", ""),
-                "answer": given,
-                "expected": evaluated["correct_answer"],
-                "explanation": q.get("explanation", ""),
-                "misconception_type": evaluated["misconception_type"],
-            })
+            misconceptions.append(
+                {
+                    "question_id": qid,
+                    "topic": topic,
+                    "question": q.get("question", ""),
+                    "answer": given,
+                    "expected": evaluated["correct_answer"],
+                    "explanation": q.get("explanation", ""),
+                    "misconception_type": evaluated["misconception_type"],
+                }
+            )
 
     total = len(questions)
     pct = round((score / max(1, total)) * 100, 1)
@@ -181,4 +206,3 @@ def evaluate_quiz_batch(
         "results": results,
         "misconceptions": misconceptions,
     }
-

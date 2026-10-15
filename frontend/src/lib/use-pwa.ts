@@ -8,10 +8,11 @@
  *  2. beforeinstallprompt capture → exposes installPwa()
  *  3. Online/offline status → isOnline
  *  4. SW update detection → updateAvailable + applyUpdate()
- *  5. Background sync registration when coming back online
+ * Private writes are not replayed by the service worker.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { observeWorkerUpdates } from "./pwa-updates";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -27,15 +28,13 @@ export type PwaState = {
   applyUpdate: () => void;
 };
 
-const SYNC_QUEUE_TAG = "sakhi-sync-queue";
-
 export function usePwa(): PwaState {
   const [isOnline, setIsOnline]           = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
   const [canInstall, setCanInstall]       = useState(false);
   const [isInstalled, setIsInstalled]     = useState(() => (typeof window !== "undefined" && window.matchMedia("(display-mode: standalone)").matches));
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
-  const newWorkerRef      = useRef<ServiceWorker | null>(null);
+  const updatesRef = useRef<ReturnType<typeof observeWorkerUpdates> | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -44,13 +43,6 @@ export function usePwa(): PwaState {
     // ── Online / offline events ──────────────────────────────
     const handleOnline = () => {
       setIsOnline(true);
-      // Try to flush queued requests via Background Sync
-      if ("serviceWorker" in navigator && "SyncManager" in window) {
-        navigator.serviceWorker.ready
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .then((reg) => (reg as any).sync.register(SYNC_QUEUE_TAG))
-          .catch(() => {});
-      }
     };
     const handleOffline = () => setIsOnline(false);
     window.addEventListener("online",  handleOnline);
@@ -73,28 +65,10 @@ export function usePwa(): PwaState {
     window.addEventListener("appinstalled", handleInstalled);
 
     // ── Register Service Worker ──────────────────────────────
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker
-        .register("/sw.js", { scope: "/" })
-        .then((reg) => {
-          // Detect updates
-          reg.addEventListener("updatefound", () => {
-            const newWorker = reg.installing;
-            if (!newWorker) return;
-            newWorkerRef.current = newWorker;
-            newWorker.addEventListener("statechange", () => {
-              if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-                setUpdateAvailable(true);
-              }
-            });
-          });
-        })
-        .catch(() => {});
-
-      // If the page was controlled by a new SW after skipWaiting
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
-        window.location.reload();
-      });
+    if (process.env.NODE_ENV === "production" && "serviceWorker" in navigator) {
+      updatesRef.current = observeWorkerUpdates(
+        navigator.serviceWorker, () => setUpdateAvailable(true), () => window.location.reload(),
+      );
     }
 
     return () => {
@@ -102,6 +76,8 @@ export function usePwa(): PwaState {
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("beforeinstallprompt", handleInstallPrompt);
       window.removeEventListener("appinstalled", handleInstalled);
+      updatesRef.current?.dispose();
+      updatesRef.current = null;
     };
   }, []);
 
@@ -118,10 +94,7 @@ export function usePwa(): PwaState {
   }, []);
 
   const applyUpdate = useCallback(() => {
-    const newWorker = newWorkerRef.current;
-    if (newWorker) {
-      newWorker.postMessage({ type: "SKIP_WAITING" });
-    }
+    updatesRef.current?.applyUpdate();
   }, []);
 
   return { isOnline, canInstall, isInstalled, updateAvailable, installPwa, applyUpdate };
@@ -132,6 +105,14 @@ export function usePwa(): PwaState {
 // ─────────────────────────────────────────────────────────────
 
 const QUIZ_CACHE_KEY = "sakhi_offline_quiz_cache";
+const CURRICULUM_VERSION = "2026-10-07";
+
+function quizCacheKey(): string | null {
+  try {
+    const user = JSON.parse(localStorage.getItem("sakhi_user") || "null") as { user_id: number; organization_id?: number } | null;
+    return user ? `${QUIZ_CACHE_KEY}:${user.organization_id || 0}:${user.user_id}:${CURRICULUM_VERSION}` : null;
+  } catch { return null; }
+}
 const MAX_CACHED_QUIZZES = 5;
 
 export type CachedQuiz = {
@@ -146,13 +127,16 @@ export type CachedQuiz = {
 export function saveQuizToOfflineCache(quiz: CachedQuiz) {
   if (typeof window === "undefined") return;
   try {
-    const existing: CachedQuiz[] = JSON.parse(localStorage.getItem(QUIZ_CACHE_KEY) || "[]");
+    const key = quizCacheKey();
+    if (!key) return;
+    localStorage.removeItem(QUIZ_CACHE_KEY);
+    const existing: CachedQuiz[] = JSON.parse(localStorage.getItem(key) || "[]");
     // Deduplicate by topic+difficulty
     const filtered = existing.filter(
-      (q) => !(q.topic === quiz.topic && q.difficulty === quiz.difficulty)
+      (q) => !(q.topic === quiz.topic && q.difficulty === quiz.difficulty && q.class_ === quiz.class_ && q.language === quiz.language)
     );
     const next = [quiz, ...filtered].slice(0, MAX_CACHED_QUIZZES);
-    localStorage.setItem(QUIZ_CACHE_KEY, JSON.stringify(next));
+    localStorage.setItem(key, JSON.stringify(next));
   } catch {
     // localStorage quota or parse error — skip silently
   }
@@ -160,12 +144,16 @@ export function saveQuizToOfflineCache(quiz: CachedQuiz) {
 
 export function getOfflineCachedQuiz(
   topic: string,
-  difficulty: string
+  difficulty: string,
+  classLevel: string,
+  language: string
 ): CachedQuiz | null {
   if (typeof window === "undefined") return null;
   try {
-    const cached: CachedQuiz[] = JSON.parse(localStorage.getItem(QUIZ_CACHE_KEY) || "[]");
-    return cached.find((q) => q.topic === topic && q.difficulty === difficulty) || cached[0] || null;
+    const key = quizCacheKey();
+    if (!key) return null;
+    const cached: CachedQuiz[] = JSON.parse(localStorage.getItem(key) || "[]");
+    return cached.find((q) => q.topic === topic && q.difficulty === difficulty && q.class_ === classLevel && q.language === language) || null;
   } catch {
     return null;
   }
@@ -174,7 +162,8 @@ export function getOfflineCachedQuiz(
 export function listOfflineCachedQuizzes(): CachedQuiz[] {
   if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem(QUIZ_CACHE_KEY) || "[]");
+    const key = quizCacheKey();
+    return key ? JSON.parse(localStorage.getItem(key) || "[]") : [];
   } catch {
     return [];
   }

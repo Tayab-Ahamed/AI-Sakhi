@@ -2,30 +2,44 @@
 FastAPI backend for AI Sakhi.
 Core endpoints for chat, quiz, study plans, profile sync, exports, progress, roles, and ops health.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import os
-import re
 from contextlib import asynccontextmanager
-from typing import List, Optional
 
 import uvicorn
-from fastapi import Depends, FastAPI, File, HTTPException, Security, UploadFile, Cookie, Response, Request
+from fastapi import Cookie, Depends, FastAPI, File, HTTPException, Request, Response, Security, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from fastapi.responses import StreamingResponse
+from slowapi.util import get_remote_address
 
+from backend import metrics
+from backend.adaptive_routes import router as adaptive_router
 from backend.auth import issue_session_token, logout_session_token, verify_session_token
+from backend.authz import (
+    Identity,
+    get_identity,
+    require_admin,
+    require_assignment_access,
+    require_chat_access,
+    require_request_scope,
+    require_same_org,
+    require_self,
+    require_teacher,
+    require_user_access,
+)
 from backend.chat import ChatUnavailable, chat, clear_session
 from backend.config import DB_PATH, GROQ_MODEL, settings
 from backend.db import (
+    apply_migrations,
     create_user,
     deactivate_user,
     ensure_default_organization,
@@ -41,7 +55,6 @@ from backend.db import (
     get_user,
     get_user_progress,
     get_user_with_org,
-    apply_migrations,
     init_db,
     link_child_to_parent,
     log_event,
@@ -50,14 +63,27 @@ from backend.db import (
     update_progress,
     update_user,
 )
-from backend.language import normalize_language
-from backend import metrics
+from backend.diagnostic_routes import router as diagnostic_router
+from backend.extensions import router as extension_router
 from backend.flashcards import generate_flashcards
+from backend.governance_routes import router as governance_router
+from backend.language import normalize_language
+from backend.observability import (
+    configure_logging,
+    init_error_monitoring,
+    request_logging_middleware,
+    validate_production_config,
+)
+from backend.practice_routes import router as practice_router
+from backend.privacy_safety_routes import router as privacy_safety_router
+from backend.production_features import router as production_router
 from backend.quiz import evaluate_answer, evaluate_quiz_batch, generate_quiz
 from backend.rag import get_rag_catalog, get_rag_stats
+from backend.security import security_middleware
+from backend.session_routes import router as session_router
 from backend.study_notes import generate_study_notes
 from backend.study_plan import generate_study_plan
-from backend.observability import configure_logging, init_error_monitoring, request_logging_middleware, validate_production_config
+from backend.teacher_review_routes import router as teacher_review_router
 
 configure_logging()
 init_error_monitoring()
@@ -96,7 +122,6 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="AI Sakhi API", version=API_VERSION, lifespan=lifespan)
 
-from backend.security import security_middleware
 app.middleware("http")(request_logging_middleware)
 app.middleware("http")(security_middleware)
 
@@ -109,9 +134,9 @@ _bearer = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Security(_bearer),
-    sakhi_token: Optional[str] = Cookie(None)
-) -> Optional[dict]:
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
+    sakhi_token: str | None = Cookie(None),
+) -> dict | None:
     """Dependency: returns decoded token payload if a valid Bearer token is supplied or secure cookie is present, else None."""
     token = None
     if credentials:
@@ -121,18 +146,22 @@ def get_current_user(
     if not token:
         return None
     from backend.auth import verify_session_token
+
     return verify_session_token(token)
 
 
 def require_roles(*roles: str):
     """Factory: returns a FastAPI dependency that raises 403 unless the token role is in *roles."""
-    def _dep(token_data: Optional[dict] = Depends(get_current_user)):
+
+    def _dep(token_data: dict | None = Depends(get_current_user)):
         if not token_data:
             raise HTTPException(status_code=401, detail="Authentication required")
         if token_data.get("role") not in roles:
             raise HTTPException(status_code=403, detail=f"Role must be one of: {list(roles)}")
         return token_data
+
     return _dep
+
 
 ALLOWED_ORIGINS = settings.allowed_origins
 app.add_middleware(
@@ -144,15 +173,13 @@ app.add_middleware(
 )
 
 
-
-
 class UserCreate(BaseModel):
     name: str
     class_: str
     language: str = "English"
     weak_subject: str = ""
     role: str = "student"  # public registration is always normalized to student
-    organization_id: Optional[int] = None
+    organization_id: int | None = None
     password: str = Field(min_length=8, max_length=128)
 
 
@@ -162,7 +189,7 @@ class UserUpdate(BaseModel):
     language: str = "English"
     weak_subject: str = ""
     role: str = "student"
-    organization_id: Optional[int] = None
+    organization_id: int | None = None
 
 
 class ChatRequest(BaseModel):
@@ -173,16 +200,16 @@ class ChatRequest(BaseModel):
     language: str = "English"
     user_name: str = ""
     weak_subject: str = ""
-    translate_to: Optional[str] = None
-    user_id: Optional[int] = None
-    organization_id: Optional[int] = None
+    translate_to: str | None = None
+    user_id: int | None = None
+    organization_id: int | None = None
 
 
 class QuizRequest(BaseModel):
     topic: str
     class_: str = "8"
     language: str = "English"
-    user_id: Optional[int] = None
+    user_id: int | None = None
     difficulty: str = "medium"
 
 
@@ -190,7 +217,7 @@ class EvaluateRequest(BaseModel):
     question: dict
     user_answer: str
     language: str = "English"
-    user_id: Optional[int] = None
+    user_id: int | None = None
 
 
 class EvaluateBatchRequest(BaseModel):
@@ -198,7 +225,7 @@ class EvaluateBatchRequest(BaseModel):
     answers: dict[str, str]
     language: str = "English"
     topic: str = ""
-    user_id: Optional[int] = None
+    user_id: int | None = None
     update_progress: bool = True
 
 
@@ -207,7 +234,7 @@ class StudyPlanRequest(BaseModel):
     subject: str
     class_: str = "8"
     language: str = "English"
-    user_id: Optional[int] = None
+    user_id: int | None = None
 
 
 class StudyNotesRequest(BaseModel):
@@ -215,14 +242,14 @@ class StudyNotesRequest(BaseModel):
     class_: str = "8"
     language: str = "English"
     subject: str = ""
-    user_id: Optional[int] = None
+    user_id: int | None = None
 
 
 class FlashcardsRequest(BaseModel):
     topic: str
     class_: str = "8"
     language: str = "English"
-    user_id: Optional[int] = None
+    user_id: int | None = None
 
 
 class ProgressUpdate(BaseModel):
@@ -325,8 +352,9 @@ def api_csrf(response: Response):
     return {"csrf_token": token}
 
 
-@app.post("/auth/token")
-def api_issue_token(req: TokenRequest, response: Response):
+@app.post("/auth/token", dependencies=[Depends(get_identity), Depends(require_request_scope)])
+def api_issue_token(req: TokenRequest, response: Response, identity: Identity = Depends(get_identity)):
+    require_self(identity, req.user_id)
     token = issue_session_token(req.user_id, req.expires_in_hours)
     response.set_cookie(
         key="sakhi_token",
@@ -334,12 +362,12 @@ def api_issue_token(req: TokenRequest, response: Response):
         httponly=True,
         samesite="lax",
         secure=os.getenv("SAKHI_ENV") == "production",
-        max_age=min(req.expires_in_hours, 24) * 3600
+        max_age=min(req.expires_in_hours, 24) * 3600,
     )
     return token
 
 
-@app.post("/auth/verify")
+@app.post("/auth/verify", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_verify_token(req: TokenVerifyRequest):
     payload = verify_session_token(req.token)
     if not payload:
@@ -347,8 +375,8 @@ def api_verify_token(req: TokenVerifyRequest):
     return payload
 
 
-@app.post("/auth/logout")
-def api_logout(req: TokenVerifyRequest, response: Response, sakhi_token: Optional[str] = Cookie(None)):
+@app.post("/auth/logout", dependencies=[Depends(get_identity), Depends(require_request_scope)])
+def api_logout(req: TokenVerifyRequest, response: Response, sakhi_token: str | None = Cookie(None)):
     token = req.token or sakhi_token
     if token:
         logout_session_token(token)
@@ -368,13 +396,18 @@ def api_create_user(req: UserCreate, response: Response):
             organization_id=None,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     if req.password:
         from backend.auth import hash_password
         from backend.db import set_user_password
+
         set_user_password(user_id, hash_password(req.password))
     user = get_user_with_org(user_id)
-    log_event("user_created", user_id=user_id, metadata={"language": normalize_language(req.language), "class_": req.class_, "role": "student"})
+    log_event(
+        "user_created",
+        user_id=user_id,
+        metadata={"language": normalize_language(req.language), "class_": req.class_, "role": "student"},
+    )
     token = issue_session_token(user_id)
     response.set_cookie(
         key="sakhi_token",
@@ -382,12 +415,17 @@ def api_create_user(req: UserCreate, response: Response):
         httponly=True,
         samesite="lax",
         secure=os.getenv("SAKHI_ENV") == "production",
-        max_age=24 * 3600
+        max_age=24 * 3600,
     )
-    return {"user_id": user_id, "message": f"Welcome, {req.name}!", "auth": token, **(user or {})}
+    return {
+        "user_id": user_id,
+        "message": f"Welcome, {req.name}!",
+        "auth": {k: v for k, v in token.items() if k != "token"},
+        **(user or {}),
+    }
 
 
-@app.get("/user/{user_id}")
+@app.get("/user/{user_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_get_user(user_id: int):
     user = get_user_with_org(user_id)
     if not user:
@@ -395,7 +433,7 @@ def api_get_user(user_id: int):
     return user
 
 
-@app.put("/user/{user_id}")
+@app.put("/user/{user_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_update_user(user_id: int, req: UserUpdate):
     user = update_user(
         user_id,
@@ -409,13 +447,19 @@ def api_update_user(user_id: int, req: UserUpdate):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     full_user = get_user_with_org(user_id)
-    log_event("user_updated", user_id=user_id, metadata={"language": user["language"], "class_": user["class_"], "role": user["role"]})
+    log_event(
+        "user_updated",
+        user_id=user_id,
+        metadata={"language": user["language"], "class_": user["class_"], "role": user["role"]},
+    )
     return full_user
 
 
-@app.get("/users")
-def api_list_users(organization_id: Optional[int] = None):
+@app.get("/users", dependencies=[Depends(get_identity), Depends(require_request_scope)])
+def api_list_users(organization_id: int | None = None, identity: Identity = Depends(require_admin)):
     """List all users, optionally filtered by organisation. Used by Admin Console and Parent Dashboard."""
+    organization_id = organization_id or identity.organization_id
+    require_same_org(identity, organization_id)
     conn = get_connection()
     if organization_id is not None:
         rows = conn.execute(
@@ -431,7 +475,7 @@ def api_list_users(organization_id: Optional[int] = None):
     return {"users": [dict(r) for r in rows]}
 
 
-@app.put("/users/{user_id}")
+@app.put("/users/{user_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_update_user_plural(user_id: int, body: dict):
     """Role-update alias used by Admin Console (PATCH-style partial update)."""
     # API field name -> actual column name ("class" is a reserved-looking column).
@@ -453,7 +497,8 @@ def api_update_user_plural(user_id: int, body: dict):
     conn = get_connection()
     try:
         cursor = conn.execute(
-            "UPDATE users SET " + set_clause + " WHERE id = ?", (*updates.values(), user_id)
+            "UPDATE users SET " + set_clause + " WHERE id = ?",  # noqa: S608 - allowlisted columns; values bound
+            (*updates.values(), user_id),
         )
         conn.commit()
         if not cursor.rowcount:
@@ -468,8 +513,11 @@ def api_update_user_plural(user_id: int, body: dict):
     return {"ok": True, "user_id": user_id, **updates}
 
 
-@app.post("/chat")
-def api_chat(req: ChatRequest):
+@app.post("/chat", dependencies=[Depends(get_identity), Depends(require_request_scope)])
+def api_chat(req: ChatRequest, identity: Identity = Depends(get_identity)):
+    require_chat_access(identity, req.session_id, claim=True)
+    req.user_id = identity.user_id
+    req.organization_id = identity.organization_id
     existing = get_chat_history(req.session_id)
     if existing and existing.get("user_id") and existing["user_id"] != req.user_id:
         raise HTTPException(status_code=403, detail="Chat session access denied")
@@ -500,109 +548,65 @@ def api_chat(req: ChatRequest):
     }
 
 
-@app.post("/chat/upload")
+@app.post("/chat/upload", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 async def api_chat_upload(
     file: UploadFile = File(...),
     class_: str = "9",
     language: str = "English",
-    user_id: Optional[int] = None,
+    user_id: int | None = None,
+    identity: Identity = Depends(get_identity),
 ):
-    """Accept a PDF or image, extract text, return explanation and quiz offer."""
-    import base64
+    """Analyze an ephemeral upload without blocking the async request loop."""
+    from starlette.concurrency import run_in_threadpool
 
-    from backend.llm import get_client as _get_llm_client
+    from backend.llm import LLMError
+    from backend.upload_service import explain_upload
 
-    client_g = _get_llm_client()
-    max_upload = settings.max_upload_bytes
-    content = await file.read(max_upload + 1)
-    if len(content) > max_upload:
-        raise HTTPException(
-            status_code=413,
-            detail="File exceeds the " + str(max_upload // (1024 * 1024)) + " MB limit",
-        )
-    fname = file.filename or "document"
-    ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
-
+    if user_id is not None:
+        require_self(identity, user_id)
+    content = await file.read(settings.max_upload_bytes + 1)
+    await file.close()
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(413, "File exceeds the configured upload limit")
     try:
-        if ext in ("png", "jpg", "jpeg", "webp", "gif"):
-            b64 = base64.b64encode(content).decode()
-            mime = f"image/{ext}" if ext != "jpg" else "image/jpeg"
-            resp = client_g.chat.completions.create(
-                model=settings.groq_vision_model,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
-                        {"type": "text", "text": f"You are AI Sakhi, a study companion for Class {class_} Indian students. Explain the key concepts in this image in simple {language}. Then offer 2-3 practice questions based on it."}
-                    ]
-                }],
-                max_tokens=1200,
-            )
-            response_text = resp.choices[0].message.content
-        elif ext == "pdf":
-            from io import BytesIO
-            from pypdf import PdfReader
-            reader = PdfReader(BytesIO(content))
-            if len(reader.pages) > settings.max_pdf_pages:
-                raise HTTPException(
-                    status_code=413,
-                    detail="PDF exceeds the " + str(settings.max_pdf_pages) + "-page limit",
-                )
-            text = "\n".join((page.extract_text() or "") for page in reader.pages)
-        elif ext in ("txt", "md"):
-            try:
-                text = content.decode("utf-8")
-            except UnicodeDecodeError:
-                raise HTTPException(status_code=415, detail="That text file is not valid UTF-8")
-        else:
-            raise HTTPException(status_code=415, detail="Supported uploads: PDF, TXT, MD, PNG, JPG, WEBP")
-
-        # Text-bearing formats share one summarisation path.
-        # (This block used to sit after a `raise`, so PDF/TXT/MD uploads always 500ed.)
-        if ext not in ("png", "jpg", "jpeg", "webp", "gif"):
-            if not text.strip():
-                raise HTTPException(
-                    status_code=422,
-                    detail="No readable text found in that file. If it is a scan, upload it as an image.",
-                )
-            # Trim to reasonable size
-            text = text[:6000]
-            prompt = (
-                f"You are AI Sakhi, a study companion for Class {class_} Indian students. "
-                f"The student uploaded a document named '{fname}'. Here is the extracted text:\n\n{text}\n\n"
-                f"In simple {language}, summarize the key concepts from this document. "
-                f"Then suggest 2-3 practice questions to help the student test their understanding."
-            )
-            resp = client_g.chat.completions.create(
-                model=GROQ_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=1200,
-                temperature=0.6,
-            )
-            response_text = resp.choices[0].message.content
-        if user_id:
-            log_event("file_uploaded", user_id=user_id, metadata={"filename": fname, "ext": ext})
-        return {"response": response_text, "filename": fname}
+        return await run_in_threadpool(
+            explain_upload, content, file.filename or "document", class_, language, identity.user_id
+        )
     except HTTPException:
         raise
-    except Exception:
-        raise HTTPException(status_code=500, detail="Unable to process the uploaded file")
+    except LLMError as exc:
+        raise HTTPException(503, "Upload analysis is temporarily unavailable") from exc
+    except Exception as exc:
+        logger.exception("upload_analysis_failed")
+        raise HTTPException(422, "Unable to read that file safely") from exc
 
 
-@app.post("/chat/clear")
+@app.post("/chat/clear", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_clear_chat(session_id: str, request: Request):
+    require_chat_access(get_identity(request), session_id)
     history = get_chat_history(session_id)
-    if history and history.get("user_id") and history["user_id"] != int(request.state.auth["sub"]) and request.state.auth.get("role") != "admin":
+    if (
+        history
+        and history.get("user_id")
+        and history["user_id"] != int(request.state.auth["sub"])
+        and request.state.auth.get("role") != "admin"
+    ):
         raise HTTPException(status_code=403, detail="Chat session access denied")
     clear_session(session_id)
     return {"message": "Session cleared"}
 
 
-@app.get("/chat/history/{session_id}")
+@app.get("/chat/history/{session_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_chat_history(session_id: str, request: Request):
+    require_chat_access(get_identity(request), session_id)
     """Return chat history for a session. Returns empty messages for new/unknown sessions (never 404)."""
     history = get_chat_history(session_id)
-    if history and history.get("user_id") and history["user_id"] != int(request.state.auth["sub"]) and request.state.auth.get("role") != "admin":
+    if (
+        history
+        and history.get("user_id")
+        and history["user_id"] != int(request.state.auth["sub"])
+        and request.state.auth.get("role") != "admin"
+    ):
         raise HTTPException(status_code=403, detail="Chat session access denied")
     if not history:
         # New session — return empty message list so frontend can start fresh
@@ -610,24 +614,36 @@ def api_chat_history(session_id: str, request: Request):
     return history
 
 
-@app.post("/quiz/generate")
+@app.post("/quiz/generate", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_generate_quiz(req: QuizRequest):
     result = generate_quiz(req.topic, req.class_, req.language, req.difficulty)
     if not result["success"]:
         raise HTTPException(status_code=500, detail=result["error"])
     if req.user_id:
-        log_event("quiz_generated", user_id=req.user_id, metadata={"topic": req.topic, "language": normalize_language(req.language), "difficulty": req.difficulty})
+        log_event(
+            "quiz_generated",
+            user_id=req.user_id,
+            metadata={
+                "topic": req.topic,
+                "language": normalize_language(req.language),
+                "difficulty": req.difficulty,
+            },
+        )
     return result["quiz"]
 
 
-@app.post("/quiz/evaluate")
+@app.post("/quiz/evaluate", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_evaluate(req: EvaluateRequest):
     if req.user_id:
-        log_event("quiz_answer_checked", user_id=req.user_id, metadata={"language": normalize_language(req.language)})
+        log_event(
+            "quiz_answer_checked",
+            user_id=req.user_id,
+            metadata={"language": normalize_language(req.language)},
+        )
     return evaluate_answer(req.question, req.user_answer, req.language)
 
 
-@app.post("/quiz/evaluate-batch")
+@app.post("/quiz/evaluate-batch", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_evaluate_batch(req: EvaluateBatchRequest):
     eval_result = evaluate_quiz_batch(req.questions, req.answers, req.language, req.topic)
     streak = None
@@ -636,18 +652,26 @@ def api_evaluate_batch(req: EvaluateBatchRequest):
         log_event(
             "quiz_completed_batch",
             user_id=req.user_id,
-            metadata={"topic": req.topic, "score": eval_result["score"], "total": eval_result["total"], "percentage": eval_result["percentage"]},
+            metadata={
+                "topic": req.topic,
+                "score": eval_result["score"],
+                "total": eval_result["total"],
+                "percentage": eval_result["percentage"],
+            },
         )
         if eval_result.get("misconceptions"):
             try:
                 conn = get_connection()
                 now_str = now_iso()
                 for m in eval_result["misconceptions"]:
-                    evidence_str = json.dumps({
-                        "question": m.get("question", ""),
-                        "answer": m.get("answer", ""),
-                        "expected": m.get("expected", ""),
-                    }, ensure_ascii=False)
+                    evidence_str = json.dumps(
+                        {
+                            "question": m.get("question", ""),
+                            "answer": m.get("answer", ""),
+                            "expected": m.get("expected", ""),
+                        },
+                        ensure_ascii=False,
+                    )
                     conn.execute(
                         """INSERT INTO misconceptions(user_id, topic, misconception_type, evidence, occurrence_count, last_seen_at)
                            VALUES(?,?,?,?,1,?)
@@ -666,7 +690,7 @@ def api_evaluate_batch(req: EvaluateBatchRequest):
     }
 
 
-@app.post("/study-plan")
+@app.post("/study-plan", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_study_plan(req: StudyPlanRequest):
     result = generate_study_plan(req.topic, req.subject, req.class_, req.language)
     if not result["success"]:
@@ -675,26 +699,34 @@ def api_study_plan(req: StudyPlanRequest):
         log_event(
             "study_plan_generated",
             user_id=req.user_id,
-            metadata={"topic": req.topic, "subject": req.subject, "language": normalize_language(req.language)},
+            metadata={
+                "topic": req.topic,
+                "subject": req.subject,
+                "language": normalize_language(req.language),
+            },
         )
     return result["plan"]
 
 
-@app.post("/progress/update")
+@app.post("/progress/update", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_update_progress(req: ProgressUpdate):
     streak = update_progress(req.user_id, req.topic, req.score, req.total)
-    log_event("progress_updated", user_id=req.user_id, metadata={"topic": req.topic, "score": req.score, "total": req.total})
+    log_event(
+        "progress_updated",
+        user_id=req.user_id,
+        metadata={"topic": req.topic, "score": req.score, "total": req.total},
+    )
     return {"streak": streak, "message": "Progress saved!"}
 
 
-@app.get("/progress/{user_id}")
+@app.get("/progress/{user_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_get_progress(user_id: int):
     history = get_user_progress(user_id)
     streak = get_streak(user_id)
     return {"history": history, "streak": streak}
 
 
-@app.get("/reports/user/{user_id}")
+@app.get("/reports/user/{user_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_user_report(user_id: int):
     report = get_student_report(user_id)
     if not report:
@@ -702,12 +734,12 @@ def api_user_report(user_id: int):
     return report
 
 
-@app.get("/rag/stats")
+@app.get("/rag/stats", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_rag_stats():
     return get_rag_stats()
 
 
-@app.get("/rag/catalog")
+@app.get("/rag/catalog", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_rag_catalog():
     """Return the RAG catalog (classes, subjects, chapters available in the vector store)."""
     return get_rag_catalog()
@@ -715,7 +747,8 @@ def api_rag_catalog():
 
 # ── Study Notes ──────────────────────────────────────────────────────────────
 
-@app.post("/study-notes/generate")
+
+@app.post("/study-notes/generate", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_generate_study_notes(req: StudyNotesRequest):
     """Generate structured markdown study notes for a topic using AI."""
     try:
@@ -727,16 +760,21 @@ def api_generate_study_notes(req: StudyNotesRequest):
         )
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
     if req.user_id:
-        log_event("study_notes_generated", user_id=req.user_id, metadata={"topic": req.topic, "language": normalize_language(req.language)})
+        log_event(
+            "study_notes_generated",
+            user_id=req.user_id,
+            metadata={"topic": req.topic, "language": normalize_language(req.language)},
+        )
     return {"notes_md": notes_md, "topic": req.topic}
 
 
 # ── Flashcards ───────────────────────────────────────────────────────────────
 
-@app.post("/flashcards/generate")
+
+@app.post("/flashcards/generate", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_generate_flashcards(req: FlashcardsRequest):
     """Generate a set of flashcards for a topic using AI."""
     result = generate_flashcards(
@@ -747,13 +785,19 @@ def api_generate_flashcards(req: FlashcardsRequest):
     if not result["success"]:
         raise HTTPException(status_code=500, detail=result.get("error", "Flashcard generation failed"))
     if req.user_id:
-        log_event("flashcards_generated", user_id=req.user_id, metadata={"topic": req.topic, "language": normalize_language(req.language)})
+        log_event(
+            "flashcards_generated",
+            user_id=req.user_id,
+            metadata={"topic": req.topic, "language": normalize_language(req.language)},
+        )
     # Return the flashcard deck directly (unwrap from the success wrapper)
     return result["flashcards"]
 
 
-@app.get("/dashboard")
-def api_dashboard(organization_id: Optional[int] = None):
+@app.get("/dashboard", dependencies=[Depends(get_identity), Depends(require_request_scope)])
+def api_dashboard(organization_id: int | None = None, identity: Identity = Depends(require_admin)):
+    organization_id = organization_id or identity.organization_id
+    require_same_org(identity, organization_id)
     users = get_all_users()
     metrics = get_dashboard_metrics(organization_id=organization_id)
     if organization_id:
@@ -764,8 +808,9 @@ def api_dashboard(organization_id: Optional[int] = None):
 @app.post("/auth/login")
 def api_login(req: LoginRequest, response: Response, request: Request):
     """Login with name + password. Returns JWT cookie."""
+    from backend.auth import check_login_allowed, clear_login_failures, record_login_failure, verify_password
     from backend.db import get_user_by_name, get_user_password_hash
-    from backend.auth import verify_password, check_login_allowed, record_login_failure, clear_login_failures
+
     ip = request.client.host if request.client else "unknown"
     if not check_login_allowed(req.name, ip):
         raise HTTPException(status_code=429, detail="Too many login attempts. Try again later")
@@ -782,22 +827,29 @@ def api_login(req: LoginRequest, response: Response, request: Request):
         httponly=True,
         samesite="lax",
         secure=os.getenv("SAKHI_ENV") == "production",
-        max_age=24 * 3600
+        max_age=24 * 3600,
     )
-    return {"user_id": user["user_id"], "message": f"Welcome back, {user['name']}!", "auth": token, **user}
+    return {
+        "user_id": user["user_id"],
+        "message": f"Welcome back, {user['name']}!",
+        "auth": {k: v for k, v in token.items() if k != "token"},
+        **user,
+    }
 
 
-@app.get("/analytics/mastery/{user_id}")
+@app.get("/analytics/mastery/{user_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_topic_mastery(user_id: int):
     """Return per-topic mastery aggregates for a student."""
     from backend.db import get_topic_mastery
+
     return {"mastery": get_topic_mastery(user_id)}
 
 
-@app.get("/gamification/xp/{user_id}")
+@app.get("/gamification/xp/{user_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_user_xp(user_id: int):
     """Return XP, level, and gamification data for a student."""
     from backend.db import get_user_xp
+
     xp = get_user_xp(user_id)
     # Level thresholds
     if xp >= 1000:
@@ -817,7 +869,7 @@ def api_user_xp(user_id: int):
     }
 
 
-@app.post("/analytics/session-end")
+@app.post("/analytics/session-end", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_session_end(req: SessionEndRequest):
     """Log a study session end with duration for time tracking."""
     log_event(
@@ -828,12 +880,16 @@ def api_session_end(req: SessionEndRequest):
     return {"ok": True}
 
 
-@app.get("/analytics/study-time/{user_id}")
+@app.get(
+    "/analytics/study-time/{user_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)]
+)
 def api_study_time(user_id: int):
     """Return per-module study time for the last 7 days."""
     import json
-    from backend.db import get_connection
     from datetime import UTC, datetime, timedelta
+
+    from backend.db import get_connection
+
     since = (datetime.now(UTC) - timedelta(days=7)).isoformat()
     conn = get_connection()
     rows = conn.execute(
@@ -849,20 +905,37 @@ def api_study_time(user_id: int):
         meta = json.loads(row["metadata_json"] or "{}")
         mod = meta.get("module", "other")
         totals[mod] = totals.get(mod, 0) + int(meta.get("duration_seconds", 0))
-    return {"study_time": [{ "module": k, "seconds": v } for k, v in totals.items()]}
+    return {"study_time": [{"module": k, "seconds": v} for k, v in totals.items()]}
 
 
-@app.get("/notifications/{user_id}")
+@app.get("/notifications/{user_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_notifications(user_id: int):
     """Return aggregated in-app notifications for a student."""
+
     from backend.db import get_connection, get_streak
-    import json
+
     notifications = []
     streak = get_streak(user_id)
     if streak == 0:
-        notifications.append({"id": "streak", "type": "warning", "title": "Keep your streak alive!", "body": "You haven't studied today. Start a quiz or chat to maintain your streak.", "href": "/quiz"})
+        notifications.append(
+            {
+                "id": "streak",
+                "type": "warning",
+                "title": "Keep your streak alive!",
+                "body": "You haven't studied today. Start a quiz or chat to maintain your streak.",
+                "href": "/quiz",
+            }
+        )
     elif streak >= 7:
-        notifications.append({"id": f"streak_{streak}", "type": "success", "title": f"🔥 {streak}-day streak!", "body": "Amazing consistency! Keep it up.", "href": "/dashboard"})
+        notifications.append(
+            {
+                "id": f"streak_{streak}",
+                "type": "success",
+                "title": f"🔥 {streak}-day streak!",
+                "body": "Amazing consistency! Keep it up.",
+                "href": "/dashboard",
+            }
+        )
     conn = get_connection()
     # Pending assignments
     try:
@@ -871,27 +944,31 @@ def api_notifications(user_id: int):
             SELECT a.title, a.subject, a.due_date FROM assignments a
             LEFT JOIN assignment_submissions s ON s.assignment_id = a.id AND s.student_id = ?
             WHERE s.id IS NULL AND a.class_ IN (SELECT class FROM users WHERE id = ?)
+            AND a.organization_id IN (SELECT organization_id FROM users WHERE id = ?)
             ORDER BY a.due_date ASC LIMIT 3
             """,
-            (user_id, user_id),
+            (user_id, user_id, user_id),
         ).fetchall()
         for row in rows:
-            notifications.append({
-                "id": f"assign_{row['title']}",
-                "type": "info",
-                "title": f"Assignment: {row['title']}",
-                "body": f"{row['subject']} • Due: {(row['due_date'] or 'No deadline')[:10]}",
-                "href": "/dashboard"
-            })
+            notifications.append(
+                {
+                    "id": f"assign_{row['title']}",
+                    "type": "info",
+                    "title": f"Assignment: {row['title']}",
+                    "body": f"{row['subject']} • Due: {(row['due_date'] or 'No deadline')[:10]}",
+                    "href": "/dashboard",
+                }
+            )
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
     except Exception:
-        pass
+        logger.exception("assignment_notifications_failed")
     conn.close()
     return {"notifications": notifications, "unread_count": len(notifications)}
 
 
 # ── Streaming Chat ────────────────────────────────────────────────────────────
+
 
 class StreamChatRequest(BaseModel):
     session_id: str
@@ -900,12 +977,13 @@ class StreamChatRequest(BaseModel):
     language: str = "English"
     user_name: str = ""
     weak_subject: str = ""
-    user_id: Optional[int] = None
-    organization_id: Optional[int] = None
+    user_id: int | None = None
+    organization_id: int | None = None
 
 
 class SafeStreamingResponse(StreamingResponse):
     """StreamingResponse resilient to Starlette BaseHTTPMiddleware keep-alive disconnect quirks."""
+
     async def listen_for_disconnect(self, receive):
         try:
             while True:
@@ -914,11 +992,15 @@ class SafeStreamingResponse(StreamingResponse):
                     break
         except Exception:
             import anyio
+
             await anyio.sleep_forever()
 
 
-@app.post("/chat/stream")
-def api_chat_stream(req: StreamChatRequest):
+@app.post("/chat/stream", dependencies=[Depends(get_identity), Depends(require_request_scope)])
+def api_chat_stream(req: StreamChatRequest, identity: Identity = Depends(get_identity)):
+    require_chat_access(identity, req.session_id, claim=True)
+    req.user_id = identity.user_id
+    req.organization_id = identity.organization_id
     """Stream chat response token-by-token using Server-Sent Events."""
     from backend.chat import stream_chat
 
@@ -944,7 +1026,9 @@ def api_chat_stream(req: StreamChatRequest):
             raise  # never swallow an intentional 4xx into a 500
         except Exception:
             logger.exception("chat_stream_failed")
-            yield _frame({"type": "error", "message": "The tutor is unavailable right now. Please try again."})
+            yield _frame(
+                {"type": "error", "message": "The tutor is unavailable right now. Please try again."}
+            )
         yield "data: [DONE]\n\n"
 
     return SafeStreamingResponse(
@@ -959,19 +1043,21 @@ def api_chat_stream(req: StreamChatRequest):
 
 # ── Practice Paper ────────────────────────────────────────────────────────────
 
+
 class PracticePaperRequest(BaseModel):
     topic: str
     class_: str = "9"
     subject: str = "Science"
     language: str = "English"
     num_questions: int = 10
-    user_id: Optional[int] = None
+    user_id: int | None = None
 
 
-@app.post("/practice-paper/generate")
+@app.post("/practice-paper/generate", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_generate_practice_paper(req: PracticePaperRequest):
     """Generate a full CBSE-style practice exam paper with model answers."""
     from backend.practice_paper import generate_practice_paper
+
     result = generate_practice_paper(
         topic=req.topic,
         class_=req.class_,
@@ -982,11 +1068,16 @@ def api_generate_practice_paper(req: PracticePaperRequest):
     if not result["success"]:
         raise HTTPException(status_code=500, detail=result.get("error", "Paper generation failed"))
     if req.user_id:
-        log_event("practice_paper_generated", user_id=req.user_id, metadata={"topic": req.topic, "subject": req.subject})
+        log_event(
+            "practice_paper_generated",
+            user_id=req.user_id,
+            metadata={"topic": req.topic, "subject": req.subject},
+        )
     return result["paper"]
 
 
 # ── Teacher & Assignment Tools ───────────────────────────────────────────────
+
 
 class AssignmentCreateRequest(BaseModel):
     teacher_id: int
@@ -997,16 +1088,19 @@ class AssignmentCreateRequest(BaseModel):
     difficulty: str = "medium"
     class_: str = "8"
     instructions: str = ""
-    due_date: Optional[str] = None
+    due_date: str | None = None
+
 
 class AssignmentSubmitRequest(BaseModel):
     student_id: int
     score: int
     total_questions: int
 
-@app.post("/assignments")
+
+@app.post("/assignments", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_create_assignment(req: AssignmentCreateRequest):
     from backend.teacher_tools import create_assignment
+
     try:
         return create_assignment(
             teacher_id=req.teacher_id,
@@ -1021,16 +1115,23 @@ def api_create_assignment(req: AssignmentCreateRequest):
         )
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
-@app.get("/assignments")
+
+@app.get("/assignments", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_list_assignments(
-    organization_id: Optional[int] = None,
-    teacher_id: Optional[int] = None,
-    class_: Optional[str] = None,
+    organization_id: int | None = None,
+    teacher_id: int | None = None,
+    class_: str | None = None,
+    identity: Identity = Depends(require_teacher),
 ):
+    organization_id = organization_id or identity.organization_id
+    require_same_org(identity, organization_id)
+    if teacher_id is not None:
+        require_user_access(identity, teacher_id)
     from backend.teacher_tools import list_assignments
+
     try:
         return list_assignments(
             organization_id=organization_id,
@@ -1039,33 +1140,55 @@ def api_list_assignments(
         )
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
-@app.get("/assignments/detail/{id}")
+
+@app.get("/assignments/detail/{id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_get_assignment(id: int, request: Request):
     from backend.teacher_tools import get_assignment
+
     item = get_assignment(id)
     if not item:
         raise HTTPException(status_code=404, detail="Assignment not found")
-    if request.state.auth.get("role") != "admin" and item.get("organization_id") != request.state.auth.get("org"):
+    if request.state.auth.get("role") != "admin" and item.get("organization_id") != request.state.auth.get(
+        "org"
+    ):
         raise HTTPException(status_code=403, detail="Assignment access denied")
     return item
 
-@app.delete("/assignments/{id}")
+
+@app.delete("/assignments/{id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_delete_assignment(id: int, teacher_id: int, request: Request):
     from backend.teacher_tools import delete_assignment, get_assignment
+
     actor_id = int(request.state.auth["sub"])
     item = get_assignment(id)
-    effective_teacher = item.get("teacher_id") if item and request.state.auth.get("role") == "admin" else actor_id
+    effective_teacher = (
+        item.get("teacher_id") if item and request.state.auth.get("role") == "admin" else actor_id
+    )
     success = delete_assignment(id, effective_teacher)
     if not success:
         raise HTTPException(status_code=404, detail="Assignment not found or unauthorized")
     return {"ok": True}
 
-@app.post("/assignments/{assignment_id}/submit")
-def api_submit_assignment(assignment_id: int, req: AssignmentSubmitRequest):
+
+@app.post(
+    "/assignments/{assignment_id}/submit",
+    dependencies=[Depends(get_identity), Depends(require_request_scope)],
+)
+def api_submit_assignment(
+    assignment_id: int, req: AssignmentSubmitRequest, identity: Identity = Depends(get_identity)
+):
+    require_self(identity, req.student_id)
+    item = require_assignment_access(identity, assignment_id)
+    student = get_user(req.student_id)
+    if identity.role != "student" or not student or str(student["class_"]) != str(item["class_"]):
+        raise HTTPException(403, "Assignment is not assigned to this student")
+    if req.total_questions <= 0 or req.score < 0 or req.score > req.total_questions:
+        raise HTTPException(422, "Invalid assignment score")
     from backend.teacher_tools import submit_assignment
+
     try:
         return submit_assignment(
             assignment_id=assignment_id,
@@ -1075,71 +1198,101 @@ def api_submit_assignment(assignment_id: int, req: AssignmentSubmitRequest):
         )
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
-@app.get("/assignments/student/{userId}")
-def api_get_student_assignments(userId: int, organization_id: Optional[int] = None):
+
+@app.get(
+    "/assignments/student/{userId}", dependencies=[Depends(get_identity), Depends(require_request_scope)]
+)
+def api_get_student_assignments(userId: int, organization_id: int | None = None):
     from backend.teacher_tools import get_student_assignments
+
     try:
         return get_student_assignments(userId, organization_id)
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
-@app.get("/assignments/{assignment_id}/submissions")
-def api_get_assignment_submissions(assignment_id: int):
+
+@app.get(
+    "/assignments/{assignment_id}/submissions",
+    dependencies=[Depends(get_identity), Depends(require_request_scope)],
+)
+def api_get_assignment_submissions(assignment_id: int, identity: Identity = Depends(require_teacher)):
+    require_assignment_access(identity, assignment_id, edit=True)
     from backend.teacher_tools import get_assignment_submissions
+
     try:
         return {"submissions": get_assignment_submissions(assignment_id)}
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
-@app.get("/report/student/{userId}")
+
+@app.get("/report/student/{userId}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_generate_student_report_data(userId: int):
     from backend.teacher_tools import generate_student_report_data
+
     try:
         return generate_student_report_data(userId)
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
-
-
-@app.get("/analytics/class/{org_id}")
+@app.get("/analytics/class/{org_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_class_analytics(org_id: int):
     from backend.teacher_tools import get_class_analytics
+
     try:
         return get_class_analytics(org_id)
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
-@app.get("/organization/roster/{org_id}")
+@app.get(
+    "/organization/roster/{org_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)]
+)
 def api_organization_roster(org_id: int):
     from backend.teacher_tools import get_organization_roster
+
     try:
         return {"roster": get_organization_roster(org_id)}
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
 class FeedbackUpdateRequest(BaseModel):
     feedback_note: str
 
 
-@app.put("/assignments/submissions/{submission_id}/feedback")
-def api_update_submission_feedback(submission_id: int, req: FeedbackUpdateRequest):
+@app.put(
+    "/assignments/submissions/{submission_id}/feedback",
+    dependencies=[Depends(get_identity), Depends(require_request_scope)],
+)
+def api_update_submission_feedback(
+    submission_id: int, req: FeedbackUpdateRequest, identity: Identity = Depends(require_teacher)
+):
+    conn = get_connection()
+    try:
+        submission = conn.execute(
+            "SELECT assignment_id FROM assignment_submissions WHERE id=?", (submission_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if not submission:
+        raise HTTPException(404, "Submission not found")
+    require_assignment_access(identity, submission["assignment_id"], edit=True)
     from backend.teacher_tools import update_submission_feedback
+
     try:
         res = update_submission_feedback(submission_id, req.feedback_note)
         if not res:
@@ -1147,8 +1300,8 @@ def api_update_submission_feedback(submission_id: int, req: FeedbackUpdateReques
         return res
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
 class DemoSeedRequest(BaseModel):
@@ -1160,16 +1313,18 @@ class DemoSeedRequest(BaseModel):
     organization_id: int
 
 
-@app.post("/demo/seed")
+@app.post("/demo/seed", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_seed_demo_data(req: DemoSeedRequest):
     if os.getenv("SAKHI_ENABLE_DEMO_SEED", "false").lower() != "true":
         raise HTTPException(status_code=404, detail="Demo seeding is disabled")
-    import sqlite3
     import random
-    from datetime import datetime, timedelta, UTC
+    import sqlite3
+    from datetime import UTC, datetime, timedelta
+
+    from backend.auth import hash_password
     from backend.config import DB_PATH
     from backend.db import create_user, set_user_password
-    from backend.auth import hash_password
+
     try:
         user_id = create_user(
             name=req.name.strip(),
@@ -1177,115 +1332,146 @@ def api_seed_demo_data(req: DemoSeedRequest):
             language=req.language.strip(),
             weak_subject=req.weak_subject.strip(),
             role=req.role.strip(),
-            organization_id=req.organization_id
+            organization_id=req.organization_id,
         )
         set_user_password(user_id, hash_password("password123"))
-        
+
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
         now = datetime.now(UTC)
-        
+
         if req.role == "student":
             topics = [req.weak_subject, "Mathematics", "Science", "English", "History"]
             for topic in topics:
-                if not topic: continue
-                num_attempts = random.randint(2, 5)
-                for i in range(num_attempts):
-                    days_ago = random.randint(1, 10)
-                    timestamp = (now - timedelta(days=days_ago, hours=random.randint(1, 12))).isoformat()
-                    score = random.randint(4, 9)
+                if not topic:
+                    continue
+                num_attempts = random.randint(2, 5)  # noqa: S311 - synthetic demo data, not security randomness
+                for _i in range(num_attempts):
+                    days_ago = random.randint(1, 10)  # noqa: S311 - synthetic demo data, not security randomness
+                    timestamp = (now - timedelta(days=days_ago, hours=random.randint(1, 12))).isoformat()  # noqa: S311 - synthetic demo data, not security randomness
+                    score = random.randint(4, 9)  # noqa: S311 - synthetic demo data, not security randomness
                     total = 10
                     if topic == req.weak_subject:
-                        score = random.randint(2, 6)
+                        score = random.randint(2, 6)  # noqa: S311 - synthetic demo data, not security randomness
                     cur.execute(
                         """
                         INSERT INTO progress (user_id, topic, score, total, streak, timestamp)
                         VALUES (?, ?, ?, ?, ?, ?)
                         """,
-                        (user_id, topic, score, total, random.randint(1, 7), timestamp)
+                        (user_id, topic, score, total, random.randint(1, 7), timestamp),  # noqa: S311 - synthetic demo data, not security randomness
                     )
-            
-            event_types = ["progress_updated", "study_notes_generated", "flashcards_generated", "chat_message"]
-            for i in range(15):
-                days_ago = random.randint(1, 7)
-                timestamp = (now - timedelta(days=days_ago, hours=random.randint(1, 23))).isoformat()
+
+            event_types = [
+                "progress_updated",
+                "study_notes_generated",
+                "flashcards_generated",
+                "chat_message",
+            ]
+            for _i in range(15):
+                days_ago = random.randint(1, 7)  # noqa: S311 - synthetic demo data, not security randomness
+                timestamp = (now - timedelta(days=days_ago, hours=random.randint(1, 23))).isoformat()  # noqa: S311 - synthetic demo data, not security randomness
                 cur.execute(
                     """
                     INSERT INTO learning_events (user_id, organization_id, event_type, metadata_json, created_at)
                     VALUES (?, ?, ?, ?, ?)
                     """,
-                    (user_id, req.organization_id, random.choice(event_types), "{}", timestamp)
+                    (user_id, req.organization_id, random.choice(event_types), "{}", timestamp),  # noqa: S311 - synthetic demo data, not security randomness
                 )
-                
+
             modules = ["chat", "quiz", "flashcards", "study_notes", "study_plan"]
             for m in modules:
                 for d in range(1, 6):
-                    if random.random() > 0.3:
-                        duration = random.randint(300, 2400)
-                        timestamp = (now - timedelta(days=d, hours=random.randint(1, 12))).isoformat()
+                    if random.random() > 0.3:  # noqa: S311 - synthetic demo data, not security randomness
+                        duration = random.randint(300, 2400)  # noqa: S311 - synthetic demo data, not security randomness
+                        timestamp = (now - timedelta(days=d, hours=random.randint(1, 12))).isoformat()  # noqa: S311 - synthetic demo data, not security randomness
                         cur.execute(
                             """
                             INSERT INTO learning_events (user_id, organization_id, event_type, metadata_json, created_at)
                             VALUES (?, ?, 'session_end', ?, ?)
                             """,
-                            (user_id, req.organization_id, f'{{"module": "{m}", "duration_seconds": {duration}}}', timestamp)
+                            (
+                                user_id,
+                                req.organization_id,
+                                f'{{"module": "{m}", "duration_seconds": {duration}}}',
+                                timestamp,
+                            ),
                         )
-                        
+
         elif req.role == "teacher":
             topics = ["Algebra Essentials", "Chemical Reactions", "Indian Constitution", "Grammar Tenses"]
             for t in topics:
-                due = (now + timedelta(days=random.randint(2, 7))).isoformat()
+                due = (now + timedelta(days=random.randint(2, 7))).isoformat()  # noqa: S311 - synthetic demo data, not security randomness
                 cur.execute(
                     """
                     INSERT INTO assignments (teacher_id, organization_id, title, subject, topic, difficulty, class_, instructions, due_date, created_at, updated_at, is_active)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                     """,
-                    (user_id, req.organization_id, f"Mock Assignment: {t}", "General", t, "medium", req.class_, "Complete the quiz on Sakhi and analyze results.", due, now.isoformat(), now.isoformat())
+                    (
+                        user_id,
+                        req.organization_id,
+                        f"Mock Assignment: {t}",
+                        "General",
+                        t,
+                        "medium",
+                        req.class_,
+                        "Complete the quiz on Sakhi and analyze results.",
+                        due,
+                        now.isoformat(),
+                        now.isoformat(),
+                    ),
                 )
-                
+
         conn.commit()
         conn.close()
-        return {"ok": True, "message": f"Successfully created and seeded test {req.role} account!", "user_id": user_id}
+        return {
+            "ok": True,
+            "message": f"Successfully created and seeded test {req.role} account!",
+            "user_id": user_id,
+        }
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
-@app.get("/analytics/daily-activity/{org_id}")
+@app.get(
+    "/analytics/daily-activity/{org_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)]
+)
 def api_daily_activity(org_id: int):
     import sqlite3
-    from datetime import datetime, timedelta, UTC
+    from datetime import UTC, datetime, timedelta
+
     from backend.config import DB_PATH
+
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
-        
+
         now = datetime.now(UTC)
         dates = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
-        
+
         activity = []
         for d in dates:
             start = f"{d}T00:00:00"
             end = f"{d}T23:59:59"
             row = cur.execute(
                 """
-                SELECT COUNT(*) as count 
-                FROM learning_events 
+                SELECT COUNT(*) as count
+                FROM learning_events
                 WHERE organization_id = ? AND created_at >= ? AND created_at <= ?
                 """,
                 (org_id, start, end),
             ).fetchone()
             count = row["count"] if row else 0
             activity.append({"date": d, "count": count})
-            
+
         conn.close()
         return {"activity": activity}
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
 class AssignmentUpdateRequest(BaseModel):
@@ -1293,8 +1479,8 @@ class AssignmentUpdateRequest(BaseModel):
     subject: str
     topic: str
     difficulty: str = "medium"
-    instructions: Optional[str] = None
-    due_date: Optional[str] = None
+    instructions: str | None = None
+    due_date: str | None = None
 
 
 class LinkChildRequest(BaseModel):
@@ -1312,34 +1498,40 @@ class FeedbackSuggestionRequest(BaseModel):
     score: int
     total: int
     student_name: str = "Student"
+    student_id: int | None = Field(default=None, gt=0)
     language: str = "English"
 
 
-@app.get("/recommendations/{user_id}")
+@app.get("/recommendations/{user_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_recommendations(user_id: int):
     """Return AI-powered next topic recommendations for a student."""
     from backend.recommendations import get_recommendations
+
     try:
         return get_recommendations(user_id)
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
-@app.get("/quiz/recommended-difficulty/{user_id}")
-def api_recommended_difficulty(user_id: int, topic: Optional[str] = None):
+@app.get(
+    "/quiz/recommended-difficulty/{user_id}",
+    dependencies=[Depends(get_identity), Depends(require_request_scope)],
+)
+def api_recommended_difficulty(user_id: int, topic: str | None = None):
     """Return adaptive difficulty recommendation for a student."""
     from backend.adaptive import get_difficulty_context
+
     try:
         return get_difficulty_context(user_id, topic=topic)
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
-@app.get("/leaderboard/{org_id}")
+@app.get("/leaderboard/{org_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_leaderboard(org_id: int):
     """Return org leaderboard — all students ranked by XP in one efficient query."""
     try:
@@ -1347,24 +1539,44 @@ def api_leaderboard(org_id: int):
         return {"leaderboard": board, "total": len(board)}
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
-@app.put("/assignments/{assignment_id}")
+@app.put("/assignments/{assignment_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_update_assignment(assignment_id: int, req: AssignmentUpdateRequest, request: Request):
+    require_assignment_access(get_identity(request), assignment_id, edit=True)
     """Teacher updates an existing assignment."""
     try:
         conn = get_connection()
         if request.state.auth.get("role") == "admin":
             result = conn.execute(
                 "UPDATE assignments SET title=?, subject=?, topic=?, difficulty=?, instructions=?, due_date=?, updated_at=? WHERE id=? AND is_active=1",
-                (req.title, req.subject, req.topic, req.difficulty, req.instructions, req.due_date, now_iso(), assignment_id),
+                (
+                    req.title,
+                    req.subject,
+                    req.topic,
+                    req.difficulty,
+                    req.instructions,
+                    req.due_date,
+                    now_iso(),
+                    assignment_id,
+                ),
             )
         else:
             result = conn.execute(
                 "UPDATE assignments SET title=?, subject=?, topic=?, difficulty=?, instructions=?, due_date=?, updated_at=? WHERE id=? AND teacher_id=? AND is_active=1",
-                (req.title, req.subject, req.topic, req.difficulty, req.instructions, req.due_date, now_iso(), assignment_id, int(request.state.auth["sub"])),
+                (
+                    req.title,
+                    req.subject,
+                    req.topic,
+                    req.difficulty,
+                    req.instructions,
+                    req.due_date,
+                    now_iso(),
+                    assignment_id,
+                    int(request.state.auth["sub"]),
+                ),
             )
         if not result.rowcount:
             raise HTTPException(status_code=404, detail="Assignment not found or unauthorized")
@@ -1373,11 +1585,11 @@ def api_update_assignment(assignment_id: int, req: AssignmentUpdateRequest, requ
         return {"ok": True, "message": "Assignment updated"}
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
-@app.delete("/users/{user_id}")
+@app.delete("/users/{user_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_deactivate_user(user_id: int):
     """Soft-delete (deactivate) a user."""
     try:
@@ -1385,63 +1597,102 @@ def api_deactivate_user(user_id: int):
         return {"ok": True, "message": "User deactivated"}
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
-@app.get("/parent/children/{parent_id}")
+@app.get("/parent/children/{parent_id}", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_get_children(parent_id: int):
     """Return all students linked to a parent."""
     try:
         return {"children": get_children(parent_id)}
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
-@app.post("/parent/link-child")
+@app.post("/parent/link-child", dependencies=[Depends(get_identity), Depends(require_request_scope)])
 def api_link_child(req: LinkChildRequest):
+    parent = get_user(req.parent_id)
+    child = get_user(req.child_id)
+    if (
+        not parent
+        or not child
+        or parent["role"] != "parent"
+        or child["role"] != "student"
+        or parent["organization_id"] != child["organization_id"]
+    ):
+        raise HTTPException(422, "Parent and student must belong to the same school")
     """Link a student to a parent account."""
     try:
         link_child_to_parent(req.parent_id, req.child_id)
         return {"ok": True, "message": "Child linked to parent"}
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
-@app.post("/organizations/join")
-def api_join_org(req: JoinOrgRequest):
+@app.post("/organizations/join", dependencies=[Depends(get_identity), Depends(require_request_scope)])
+def api_join_org(req: JoinOrgRequest, identity: Identity = Depends(get_identity)):
+    require_self(identity, req.user_id)
+    if identity.role != "student":
+        raise HTTPException(403, "Staff organization membership requires an invitation")
     """Join an organization using its join code."""
     org = get_org_by_join_code(req.join_code)
     if not org:
         raise HTTPException(status_code=404, detail="Invalid join code")
     conn = get_connection()
-    conn.execute("UPDATE users SET organization_id = ? WHERE id = ?", (org["id"], req.user_id))
+    conn.execute(
+        "UPDATE users SET organization_id = ?, parent_id=NULL WHERE id = ?", (org["id"], req.user_id)
+    )
     conn.commit()
     conn.close()
     return {"ok": True, "organization": org}
 
 
-@app.post("/organizations/{org_id}/generate-code")
-def api_generate_join_code(org_id: int):
+@app.post(
+    "/organizations/{org_id}/generate-code",
+    dependencies=[Depends(get_identity), Depends(require_request_scope)],
+)
+def api_generate_join_code(org_id: int, identity: Identity = Depends(require_admin)):
+    require_same_org(identity, org_id)
     """Generate a new join code for an organization (admin only)."""
     import secrets
+
     code = secrets.token_hex(3).upper()
     set_org_join_code(org_id, code)
     return {"join_code": code}
 
 
-@app.post("/ai/feedback-suggestion")
-def api_feedback_suggestion(req: FeedbackSuggestionRequest):
+@app.post("/ai/feedback-suggestion", dependencies=[Depends(get_identity), Depends(require_request_scope)])
+def api_feedback_suggestion(req: FeedbackSuggestionRequest, identity: Identity = Depends(get_identity)):
     """Generate 3 AI-suggested feedback phrases for a teacher."""
+    from backend.consent_service import policy_info, require_ai_approval
     from backend.llm import complete
+
+    if policy_info()["enforced"] and req.student_id is None:
+        raise HTTPException(422, "Student account is required for approval verification")
+    if req.student_id is not None:
+        require_user_access(identity, req.student_id)
+        conn = get_connection()
+        try:
+            target = conn.execute("SELECT role FROM users WHERE id=?", (req.student_id,)).fetchone()
+            if not target or target["role"] != "student":
+                raise HTTPException(422, "A student account is required")
+            require_ai_approval(conn, req.student_id)
+        finally:
+            conn.close()
+
     try:
         pct = round((req.score / req.total) * 100) if req.total > 0 else 0
-        performance = "excellent" if pct >= 80 else ("good" if pct >= 60 else ("average" if pct >= 40 else "struggling"))
-        prompt = f"""Student {req.student_name} scored {req.score}/{req.total} ({pct}%) on '{req.topic}'. Performance: {performance}.
+        performance = (
+            "excellent"
+            if pct >= 80
+            else ("good" if pct >= 60 else ("average" if pct >= 40 else "struggling"))
+        )
+        prompt = f"""A learner scored {req.score}/{req.total} ({pct}%) on '{req.topic}'. Performance: {performance}.
 Generate exactly 3 short encouraging teacher feedback phrases (1-2 sentences each). Constructive, warm, topic-specific.
 Return ONLY a JSON array of 3 strings. Language: {req.language}"""
         res = complete(
@@ -1450,7 +1701,9 @@ Return ONLY a JSON array of 3 strings. Language: {req.language}"""
             max_tokens=300,
             tag="teacher_feedback_gen",
         )
-        import json, re as _re
+        import json
+        import re as _re
+
         raw = res.text.strip()
         raw = _re.sub(r"^```[a-z]*\n?", "", raw)
         raw = _re.sub(r"\n?```$", "", raw)
@@ -1459,23 +1712,24 @@ Return ONLY a JSON array of 3 strings. Language: {req.language}"""
     except HTTPException:
         raise  # never swallow an intentional 4xx into a 500
     except Exception:
-        return {"suggestions": [
-            f"Good effort on {req.topic}! Keep practicing.",
-            f"You scored {req.score}/{req.total} — try reviewing the key concepts again.",
-            "I believe in you — consistent practice will help you improve!"
-        ]}
+        return {
+            "suggestions": [
+                f"Good effort on {req.topic}! Keep practicing.",
+                f"You scored {req.score}/{req.total} — try reviewing the key concepts again.",
+                "I believe in you — consistent practice will help you improve!",
+            ]
+        }
 
 
-from backend.extensions import router as extension_router
-from backend.production_features import router as production_router
-from backend.adaptive_routes import router as adaptive_router
-from backend.teacher_review_routes import router as teacher_review_router
-from backend.privacy_safety_routes import router as privacy_safety_router
 app.include_router(extension_router)
 app.include_router(production_router)
 app.include_router(adaptive_router)
 app.include_router(teacher_review_router)
 app.include_router(privacy_safety_router)
+app.include_router(session_router)
+app.include_router(governance_router)
+app.include_router(practice_router)
+app.include_router(diagnostic_router)
 
 if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)

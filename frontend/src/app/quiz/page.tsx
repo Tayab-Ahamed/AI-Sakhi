@@ -7,9 +7,10 @@ import { useSearchParams } from "next/navigation";
 import confetti from "canvas-confetti";
 
 import Sidebar from "@/components/Sidebar";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { getSubjectsForClass, getTopicsForSubjectAndClass } from "@/lib/curriculum";
 import { useUser } from "@/lib/user-context";
+import type { SakhiUser } from "@/lib/user";
 import { saveQuizToOfflineCache, getOfflineCachedQuiz, usePwa } from "@/lib/use-pwa";
 import { Zap, Lightbulb, CheckCircle, XCircle, RotateCcw, MessageCircle, ChevronRight, ChevronLeft } from "lucide-react";
 
@@ -23,17 +24,12 @@ const DIFFICULTIES: { id: Difficulty; label: string; emoji: string; desc: string
   { id: "hard",   label: "Hard",   emoji: "⚡", desc: "Analysis & reasoning" },
 ];
 
-function QuizPageContent() {
-  const { user } = useUser();
+function QuizPageContent({ user }: { user: SakhiUser }) {
   const searchParams = useSearchParams();
   const topicFromUrl = searchParams.get("topic") || "";
-  const [subjects] = useState<ReturnType<typeof getSubjectsForClass>>(() => (
-    user ? getSubjectsForClass(user.class_) : []
-  ));
+  const subjects = getSubjectsForClass(user.class_);
   const [selectedSub, setSelectedSub] = useState(() => (subjects[0]?.id || ""));
-  const [topics, setTopics] = useState<string[]>(() => (
-    user && subjects[0] ? getTopicsForSubjectAndClass(subjects[0].id, user.class_) : []
-  ));
+  const topics = getTopicsForSubjectAndClass(selectedSub, user.class_);
   const [topic, setTopic] = useState(() => topicFromUrl || user?.weak_subject || "");
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [diffRecommendation, setDiffRecommendation] = useState<{ recommended: string; average_pct: number | null; data_points: number } | null>(null);
@@ -46,6 +42,7 @@ function QuizPageContent() {
   const [hints, setHints] = useState<Record<number, boolean>>({});
   const [results, setResults] = useState<Record<number, Result>>({});
   const [loading, setLoading] = useState(false);
+  const [generationError, setGenerationError] = useState("");
   const { isOnline } = usePwa();
 
   // ── Adaptive difficulty: auto-fetch when topic changes ──────────────
@@ -73,7 +70,6 @@ function QuizPageContent() {
 
   const onSubjectChange = (sid: string) => {
     setSelectedSub(sid);
-    if (user) setTopics(getTopicsForSubjectAndClass(sid, user.class_));
     setTopic("");
     setDiffRecommendation(null);
     setDiffOverridden(false);
@@ -82,6 +78,7 @@ function QuizPageContent() {
   const generate = async () => {
     if (!topic.trim() || !user) return;
     setLoading(true);
+    setGenerationError("");
     try {
       const res = await api.generateQuiz({ topic: topic.trim(), class_: user.class_, language: user.language, user_id: user.user_id, difficulty }) as { questions?: Question[]; topic?: string };
       setQuestions(res.questions || []);
@@ -95,18 +92,28 @@ function QuizPageContent() {
       });
       setCurrentQ(0); setAnswers({}); setHints({}); setResults({});
       setPhase("active");
-    } catch {
-      // Offline fallback: use cached quiz if available
-      const cached = getOfflineCachedQuiz(topic.trim(), difficulty);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setGenerationError(error.status === 401
+          ? "Your session has expired. Sign in again to generate a quiz."
+          : error.status === 403
+            ? "Quiz generation is not authorized. Check AI processing approval on the privacy page or ask your linked parent or school staff."
+            : "Could not generate this quiz. Please try again when the service is available.");
+        return;
+      }
+      if (isOnline) {
+        setGenerationError("Could not generate this quiz. Check your connection and try again.");
+        return;
+      }
+      // Only confirmed offline failures may use a matching user-scoped pack.
+      const cached = getOfflineCachedQuiz(topic.trim(), difficulty, user.class_, user.language);
       if (cached && cached.questions.length > 0) {
         setQuestions(cached.questions as Question[]);
         setQuizTopic(cached.topic);
         setCurrentQ(0); setAnswers({}); setHints({}); setResults({});
         setPhase("active");
       } else {
-        alert(isOnline
-          ? "Error generating quiz. Is the backend running?"
-          : "You're offline and no cached quiz is available for this topic yet. Try another topic.");
+        setGenerationError("You're offline and no cached quiz is available for this topic yet. Try another topic.");
       }
     } finally {
       setLoading(false);
@@ -114,13 +121,13 @@ function QuizPageContent() {
   };
 
   const submitAll = async () => {
-    if (!questions.length) return;
+    if (loading || !questions.length || questions.some((q) => !answers[q.id])) return;
     setLoading(true);
+    setGenerationError("");
     const res: Record<number, Result> = {};
     let score = 0;
     try {
-      if (user?.user_id) {
-        const batchData = await api.evaluateQuizBatch({
+      const batchData = await api.evaluateQuizBatch({
           user_id: user.user_id,
           topic: quizTopic,
           items: questions.map((q) => ({
@@ -133,45 +140,32 @@ function QuizPageContent() {
           total: number;
           results: Array<{ question_id: number; is_correct: boolean; feedback: string; correct_answer: string }>;
         };
-        score = batchData.score;
-        batchData.results.forEach((item, idx) => {
+      if (!Array.isArray(batchData.results) || batchData.results.length !== questions.length) {
+        throw new Error("Incomplete quiz evaluation");
+      }
+      score = batchData.score;
+      batchData.results.forEach((item, idx) => {
           const qId = questions[idx]?.id ?? item.question_id;
           res[qId] = {
             is_correct: item.is_correct,
             feedback: item.feedback,
             correct_answer: item.correct_answer,
           };
-        });
-      } else {
-        for (const q of questions) {
-          const r = await api.evaluateAnswer({
-            question: q,
-            user_answer: answers[q.id] || "A",
-            language: user?.language,
-            user_id: user?.user_id,
-          }) as Result;
-          res[q.id] = r;
-          if (r.is_correct) score++;
-        }
-      }
-    } catch {
-      for (const q of questions) {
-        const r = await api.evaluateAnswer({
-          question: q,
-          user_answer: answers[q.id] || "A",
-          language: user?.language,
-          user_id: user?.user_id,
-        }) as Result;
-        res[q.id] = r;
-        if (r.is_correct) score++;
-      }
-      if (user?.user_id) {
-        await api.updateProgress({ user_id: user.user_id, topic: quizTopic, score, total: questions.length });
-      }
+      });
+    } catch (error) {
+      // A failed write may already have committed. Never issue alternate scoring
+      // writes or silently convert an authorization failure into a local result.
+      setGenerationError(error instanceof ApiError && error.status === 403
+        ? "Checking answers is not authorized. Check AI processing approval or ask your linked parent or school staff. Your answers are still here."
+        : error instanceof ApiError && error.status === 401
+          ? "Your session has expired. Sign in again to check your answers."
+          : "Could not check your answers. Your answers are still here; reconnect or try again when the service is available.");
+      return;
+    } finally {
+      setLoading(false);
     }
     setResults(res);
     setPhase("done");
-    setLoading(false);
 
     // 🎉 Confetti on perfect score
     if (score === questions.length && questions.length > 0) {
@@ -236,6 +230,7 @@ function QuizPageContent() {
             </div>
           </div>
 
+          {generationError && <p role="alert" className="card p-4 mb-4">{generationError} <Link href="/privacy">Privacy &amp; approval</Link></p>}
           <AnimatePresence mode="wait">
             {phase === "setup" && (
               <motion.div key="setup" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
@@ -245,7 +240,7 @@ function QuizPageContent() {
                     <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>Subject</p>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                       {subjects.map((s) => (
-                        <button key={s.id} className={`subject-chip ${selectedSub === s.id ? "selected" : ""}`} onClick={() => onSubjectChange(s.id)} style={{ fontSize: 12, padding: "6px 11px" }}>
+                        <button key={s.id} aria-pressed={selectedSub === s.id} className={`subject-chip ${selectedSub === s.id ? "selected" : ""}`} onClick={() => onSubjectChange(s.id)} style={{ fontSize: 12, padding: "6px 11px" }}>
                           {s.icon} {s.label}
                         </button>
                       ))}
@@ -262,7 +257,7 @@ function QuizPageContent() {
                         ))}
                       </div>
                     )}
-                    <input className="input" placeholder="Or type a custom topic..." value={topic} onChange={(e) => setTopic(e.target.value)} onKeyDown={(e) => e.key === "Enter" && generate()} />
+                    <input aria-label="Or type a custom topic..." className="input" placeholder="Or type a custom topic..." value={topic} onChange={(e) => setTopic(e.target.value)} onKeyDown={(e) => e.key === "Enter" && generate()} />
                   </div>
 
                   {/* Difficulty */}
@@ -358,7 +353,7 @@ function QuizPageContent() {
                       <p style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.5, marginBottom: 20 }}>{q.question}</p>
                       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
                         {Object.entries(q.options).map(([key, val]) => (
-                          <button key={key} className={`quiz-option ${answers[q.id] === key ? "selected" : ""}`} onClick={() => setAnswers((a) => ({ ...a, [q.id]: key }))}>
+                          <button key={key} aria-pressed={answers[q.id] === key} className={`quiz-option ${answers[q.id] === key ? "selected" : ""}`} onClick={() => setAnswers((a) => ({ ...a, [q.id]: key }))}>
                             <span className="quiz-option-key">{key}</span>
                             <span style={{ fontSize: 14, color: "var(--text-primary)" }}>{val}</span>
                           </button>
@@ -450,9 +445,12 @@ function QuizPageContent() {
 }
 
 export default function QuizPage() {
+  const { user, isReady } = useUser();
+  if (!isReady) return <p role="status" className="p-6">Restoring your session…</p>;
+  if (!user) return <main className="p-6"><h1>Quiz practice</h1><Link href="/login">Sign in to practice</Link></main>;
   return (
     <Suspense fallback={null}>
-      <QuizPageContent />
+      <QuizPageContent key={`${user.user_id}:${user.class_}:${user.language}`} user={user} />
     </Suspense>
   );
 }

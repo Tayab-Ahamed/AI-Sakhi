@@ -46,4 +46,14 @@ describe("LocalStore", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await expect(store.importAll({ version: 2 } as any)).rejects.toThrow("Unsupported");
   });
+
+  it("erases only the signed-out learner's device data", async () => {
+    await store.saveChat(chat({ userId: 1 }));
+    await store.saveChat(chat({ userId: 2 }));
+    await store.saveArtifact({ id: "n1", userId: 1, type: "note", title: "N", payload: {}, updatedAt: 5, deviceId: "d1" });
+    await store.clearUser(1);
+    expect(await store.listChats(1)).toEqual([]);
+    expect(await store.listArtifacts(1)).toEqual([]);
+    expect(await store.listChats(2)).toHaveLength(1);
+  });
 });

@@ -9,6 +9,7 @@ Responsibilities:
 
 Every module should call `complete()` instead of touching the Groq SDK.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -18,8 +19,9 @@ import random
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any, Iterator, Sequence
+from typing import Any
 
 from backend.config import settings
 
@@ -139,6 +141,11 @@ def reset_client() -> None:
     _cache.clear()
 
 
+def clear_response_cache() -> None:
+    """Invalidate ephemeral model responses after privacy erasure."""
+    _cache.clear()
+
+
 def is_configured() -> bool:
     return bool(settings.groq_api_key)
 
@@ -157,7 +164,9 @@ def _is_retryable(exc: Exception) -> bool:
     if isinstance(status, int):
         return status == 408 or status == 429 or status >= 500
     text = f"{type(exc).__name__}: {exc}".lower()
-    return any(token in text for token in ("timeout", "timed out", "connection", "temporarily", "rate limit", "503"))
+    return any(
+        token in text for token in ("timeout", "timed out", "connection", "temporarily", "rate limit", "503")
+    )
 
 
 def complete(
@@ -222,12 +231,12 @@ def complete(
             if use_cache:
                 _cache.set(key, text)
             return LLMResult(text=text, usage=usage)
-        except Exception as exc:  # noqa: BLE001 - normalised into LLMError below
+        except Exception as exc:
             last_error = exc
             if attempt >= settings.llm_max_retries or not _is_retryable(exc):
                 break
             _bump("llm_retries_total")
-            backoff = min(8.0, (2**attempt) * 0.75) + random.uniform(0, 0.4)
+            backoff = min(8.0, (2**attempt) * 0.75) + random.uniform(0, 0.4)  # noqa: S311 - retry jitter, not security randomness
             logger.warning(
                 "llm_retry", extra={"llm_tag": tag, "llm_attempt": attempt + 1, "llm_error": str(exc)[:200]}
             )
@@ -235,7 +244,9 @@ def complete(
 
     _bump("llm_failures_total")
     logger.error("llm_failed", extra={"llm_tag": tag, "llm_error": str(last_error)[:500]})
-    raise LLMError(str(last_error or "unknown LLM failure"), retryable=_is_retryable(last_error or Exception()))
+    raise LLMError(
+        str(last_error or "unknown LLM failure"), retryable=_is_retryable(last_error or Exception())
+    )
 
 
 def complete_text(prompt: str, *, system: str | None = None, **kwargs: Any) -> str:
@@ -273,7 +284,7 @@ def stream(
             delta = chunk.choices[0].delta.content
             if delta:
                 yield delta
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _bump("llm_failures_total")
         logger.error("llm_stream_failed", extra={"llm_tag": tag, "llm_error": str(exc)[:500]})
         raise LLMError(str(exc), retryable=_is_retryable(exc)) from exc

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import Sidebar from "../Sidebar";
 import React from "react";
 
@@ -49,14 +49,16 @@ vi.mock("@/lib/api", () => ({
 }));
 
 describe("Sidebar Component", () => {
-  it("renders brand logo", () => {
+  it("renders brand logo", async () => {
     render(<Sidebar />);
     expect(document.body.textContent).toContain("AI Sakhi");
+    await screen.findByText(/150 chunks/);
   });
 
-  it("renders student profile metrics properly when signed in", () => {
+  it("renders student profile metrics properly when signed in", async () => {
     render(<Sidebar />);
     expect(document.body.textContent).toContain("Rani");
     expect(document.body.textContent).toContain("Learning Goals");
+    await screen.findByText(/150 chunks/);
   });
 });

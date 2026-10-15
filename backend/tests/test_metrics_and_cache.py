@@ -9,8 +9,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from backend import metrics  # noqa: E402
-from backend.llm import _TTLCache  # noqa: E402
+from backend import metrics
+from backend.llm import _TTLCache
 
 
 class TestMetrics(unittest.TestCase):

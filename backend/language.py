@@ -1,6 +1,7 @@
 """
 Language selection, detection, and enforcement helpers for AI Sakhi.
 """
+
 from __future__ import annotations
 
 import re
@@ -13,9 +14,28 @@ SCRIPT_RANGES = {
 }
 
 HINGLISH_MARKERS = {
-    "kya", "kaise", "kyun", "samjhao", "samjha", "samajh", "mujhe",
-    "mera", "meri", "maths", "acha", "accha", "nahi", "haan", "karna",
-    "karo", "please", "homework", "jaldi", "thoda", "simple", "exam",
+    "kya",
+    "kaise",
+    "kyun",
+    "samjhao",
+    "samjha",
+    "samajh",
+    "mujhe",
+    "mera",
+    "meri",
+    "maths",
+    "acha",
+    "accha",
+    "nahi",
+    "haan",
+    "karna",
+    "karo",
+    "please",
+    "homework",
+    "jaldi",
+    "thoda",
+    "simple",
+    "exam",
 }
 
 
@@ -78,8 +98,7 @@ def language_instruction(language: str) -> str:
             "Do not transliterate Kannada into English letters."
         ),
         "Tamil": (
-            "Write in natural Tamil using Tamil script. "
-            "Do not transliterate Tamil into English letters."
+            "Write in natural Tamil using Tamil script. " "Do not transliterate Tamil into English letters."
         ),
         "Hinglish": (
             "Write in natural Hinglish using mostly English letters with a Hindi-speaking tone. "

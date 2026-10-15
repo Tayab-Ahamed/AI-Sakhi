@@ -14,6 +14,7 @@ Hardening notes:
   * cookie-authenticated state-changing requests require a double-submit CSRF
     token. Bearer-authenticated API clients are exempt by construction.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -51,12 +52,18 @@ PUBLIC_PREFIXES = ("/docs", "/redoc")
 ADMIN_PREFIXES = ("/users", "/demo/seed", "/admin/")
 TEACHER_PREFIXES = ("/analytics/class/", "/organization/roster/")
 SELF_PATHS = (
-    r"^/user/(\d+)$", r"^/progress/(\d+)$", r"^/reports/user/(\d+)$",
-    r"^/analytics/mastery/(\d+)$", r"^/gamification/xp/(\d+)$",
-    r"^/analytics/study-time/(\d+)$", r"^/notifications/(\d+)$",
-    r"^/recommendations/(\d+)$", r"^/quiz/recommended-difficulty/(\d+)$",
+    r"^/user/(\d+)$",
+    r"^/progress/(\d+)$",
+    r"^/reports/user/(\d+)$",
+    r"^/analytics/mastery/(\d+)$",
+    r"^/gamification/xp/(\d+)$",
+    r"^/analytics/study-time/(\d+)$",
+    r"^/notifications/(\d+)$",
+    r"^/recommendations/(\d+)$",
+    r"^/quiz/recommended-difficulty/(\d+)$",
     r"^/chat/sessions/(\d+)$",
-    r"^/parent/children/(\d+)$", r"^/report/student/(\d+)$",
+    r"^/parent/children/(\d+)$",
+    r"^/report/student/(\d+)$",
     r"^/assignments/student/(\d+)$",
 )
 
@@ -66,7 +73,11 @@ STATE_CHANGING = {"POST", "PUT", "PATCH", "DELETE"}
 
 
 def _deny(status: int, detail: str) -> JSONResponse:
-    return JSONResponse(status_code=status, content={"detail": detail})
+    return JSONResponse(
+        status_code=status,
+        content={"detail": detail},
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY"},
+    )
 
 
 def _as_int(value) -> int | None:
@@ -107,14 +118,9 @@ def _same_org(user_id: int, org_id: int | None) -> bool:
 
 
 def _can_access_user(actor_id: int, role: str, org_id: int | None, target_id: int) -> bool:
-    if role == "admin" or target_id == actor_id:
-        return True
-    row = _target_user(target_id)
-    if not row or row["organization_id"] != org_id:
-        return False
-    if role == "parent":
-        return row["parent_id"] == actor_id
-    return role == "teacher"
+    from backend.authz import Identity, can_access_user
+
+    return can_access_user(Identity(actor_id, role, org_id), target_id)
 
 
 def _route_label(path: str) -> str:
@@ -159,6 +165,14 @@ def _validate_body_identifiers(data: dict, uid: int, role: str, org: int | None)
     if "user_id" in parsed and parsed["user_id"] != uid and role != "admin":
         return _deny(403, "User identifier is not authorized")
 
+    for field in ("user_id", "student_id", "child_id", "teacher_id", "parent_id"):
+        if field in data and data[field] is not None:
+            target = _as_int(data[field])
+            if target is None:
+                return _deny(400, field + " must be numeric")
+            if not _can_access_user(uid, role, org, target):
+                return _deny(403, "User identifier is not authorized")
+
     if "student_id" in parsed and parsed["student_id"] != uid:
         if role == "student" or (role != "admin" and not _same_org(parsed["student_id"], org)):
             return _deny(403, "Student identifier is not authorized")
@@ -172,7 +186,7 @@ def _validate_body_identifiers(data: dict, uid: int, role: str, org: int | None)
     if "parent_id" in parsed and role == "parent" and parsed["parent_id"] != uid:
         return _deny(403, "Parent identifier is not authorized")
 
-    if "organization_id" in parsed and role != "admin" and parsed["organization_id"] != org:
+    if "organization_id" in parsed and parsed["organization_id"] != org:
         return _deny(403, "Organization identifier is not authorized")
 
     return None
@@ -248,10 +262,12 @@ async def security_middleware(request: Request, call_next):
 
         org_pattern = r"/(?:leaderboard|analytics/daily-activity|analytics/class|organization/roster)/(\d+)"
         org_match = re.search(org_pattern, path)
-        if org_match and role != "admin" and _as_int(org_match.group(1)) != org:
+        if org_match and _as_int(org_match.group(1)) != org:
             return _deny(403, "Cross-organization access denied")
 
-        if method in {"POST", "PUT", "PATCH"} and "application/json" in request.headers.get("content-type", ""):
+        if method in {"POST", "PUT", "PATCH"} and "application/json" in request.headers.get(
+            "content-type", ""
+        ):
             declared_length = _as_int(request.headers.get("content-length"))
             if declared_length is not None and declared_length > settings.max_json_body_bytes:
                 return _deny(413, "Request body too large")
@@ -279,6 +295,21 @@ async def security_middleware(request: Request, call_next):
             if not isinstance(data, dict):
                 data = {}
 
+            if path.startswith("/v2/diagnostics/") and any(
+                field in data
+                for field in (
+                    "organization_id",
+                    "user_id",
+                    "student_id",
+                    "teacher_id",
+                    "parent_id",
+                    "child_id",
+                    "role",
+                )
+            ):
+                # This domain never accepts caller authority, even when it matches the session.
+                # Reject before legacy identifier authorization so its strict contract stays 422.
+                return _deny(422, "Diagnostic bodies do not accept account, school or role authority")
             denial = _validate_body_identifiers(data, uid, role, org)
             if denial is not None:
                 return denial
@@ -296,7 +327,7 @@ async def security_middleware(request: Request, call_next):
             target_org = _as_int(query_org)
             if target_org is None:
                 return _deny(400, "organization_id must be numeric")
-            if role != "admin" and target_org != org:
+            if target_org != org:
                 return _deny(403, "Organization identifier is not authorized")
 
         response = await call_next(request)
@@ -311,6 +342,8 @@ async def security_middleware(request: Request, call_next):
     metrics.observe("sakhi_http_request_duration_ms", duration_ms, route=label)
 
     response.headers["X-Request-ID"] = request_id
+    if path not in PUBLIC_EXACT and not path.startswith(PUBLIC_PREFIXES):
+        response.headers["Cache-Control"] = "no-store"
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")

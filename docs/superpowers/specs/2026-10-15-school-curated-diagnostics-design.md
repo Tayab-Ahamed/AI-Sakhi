@@ -1,7 +1,7 @@
 # School-curated diagnostics and prerequisite guidance
 
 Date: October 15, 2026 (Asia/Calcutta).
-Status: proposed specification, awaiting written-spec review. The user approved the school-curated direction and preparation of this specification; implementation is not yet approved by this artifact.
+Status: written specification and twelve-task Native execution approved by the user on October 15, 2026. Diagnostic implementation accepted after engineering/browser gates, original independent review and one TDD fix pass. See `docs/verification-diagnostics.md` for evidence, deferred minors and uncommitted-integration/release limits; this is not whole-roadmap or production acceptance.
 Roadmap: task 9, with a narrow explained-next-step result. This does not complete task 10's integration across mastery, recommendations, sprints and recall.
 
 ## Objective and agreed intent

@@ -1,5 +1,74 @@
 @import "tailwindcss";
 
+/* Diagnostics: scoped school authoring/evidence layouts, independent of legacy dashboard tabs. */
+.main-content.diagnostic-main { overflow-y: auto; overflow-x: hidden; min-width: 0; padding: 0; }
+.diagnostic-page { width: 100%; max-width: 64rem; min-width: 0; margin-inline: auto; padding: 2rem 1.5rem 3rem; overflow-wrap: anywhere; color: var(--text-primary); }
+.diagnostic-page h1 { font-size: 1.75rem; font-weight: 750; line-height: 1.25; }
+.diagnostic-lead { margin-block: .75rem 1.5rem; color: var(--text-secondary); }
+.diagnostic-workspace { display: grid; gap: 1.5rem; min-width: 0; }
+.diagnostic-workspace h2 { font-size: 1.25rem; font-weight: 700; margin-block-end: .75rem; }
+.diagnostic-workspace h3 { font-size: 1.0625rem; font-weight: 650; margin-block-end: .5rem; }
+.diagnostic-workspace h4 { font-size: 1rem; font-weight: 600; margin-block: .75rem .5rem; }
+.diagnostic-workspace p { margin-block: .5rem; line-height: 1.6; }
+.diagnostic-workspace section, .diagnostic-workspace form, .diagnostic-workspace article { min-width: 0; }
+.diagnostic-workspace > section, .diagnostic-workspace > form { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1.5rem; }
+.diagnostic-fields { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; margin-block: 1rem; }
+.diagnostic-fields label { display: grid; gap: .5rem; min-width: 0; font-weight: 600; }
+.diagnostic-fields input { width: 100%; min-width: 0; min-height: 2.75rem; padding: .625rem .75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-app); color: var(--text-primary); font-weight: 400; }
+.diagnostic-workspace fieldset { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1rem; margin-block: 1rem; }
+.diagnostic-workspace legend { max-width: 100%; padding-inline: .25rem; font-weight: 650; }
+.diagnostic-choice { display: flex; gap: .75rem; align-items: start; min-height: 2.75rem; padding: .625rem .5rem; cursor: pointer; line-height: 1.5; border-radius: var(--radius-sm); }
+.diagnostic-choice:hover { background: var(--bg-app); }
+.diagnostic-choice input { flex: 0 0 auto; width: 1.25rem; height: 1.25rem; margin-block-start: .125rem; accent-color: var(--emerald-dark); }
+.diagnostic-choice span { min-width: 0; }
+.diagnostic-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-block: 1rem; }
+.diagnostic-workspace button, .diagnostic-link { display: inline-flex; align-items: center; justify-content: center; min-height: 2.75rem; max-width: 100%; padding: .625rem 1rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-primary); font-weight: 600; white-space: normal; text-align: center; text-decoration: none; cursor: pointer; }
+.diagnostic-workspace button:hover:not(:disabled), .diagnostic-link:hover { border-color: var(--emerald-dark); background: var(--bg-app); }
+.diagnostic-workspace button[type="submit"], .diagnostic-workspace button[type="submit"]:hover:not(:disabled) { background: var(--emerald-dark); color: #fff; }
+.diagnostic-workspace button:disabled, .diagnostic-workspace input:disabled { cursor: not-allowed; opacity: .65; }
+.diagnostic-workspace :focus-visible { outline: 3px solid var(--emerald-dark); outline-offset: 3px; }
+.diagnostic-hint, .diagnostic-lead { color: var(--text-secondary); }
+.diagnostic-notice, .diagnostic-error { border-inline-start: 3px solid var(--emerald-dark); background: var(--bg-app); padding: .75rem 1rem; }
+.diagnostic-error { border: 1px solid var(--text-secondary); border-inline-start-width: 3px; }
+.diagnostic-list { display: grid; gap: .75rem; list-style: none; padding: 0; }
+.diagnostic-list > li { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between; border-block-end: 1px solid var(--border); padding-block: .75rem; }
+.diagnostic-list > li > div, .diagnostic-list > li > span { min-width: 0; }
+.diagnostic-evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-block: 1.5rem; }
+.diagnostic-evidence { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1rem; }
+.diagnostic-state { font-weight: 700; }
+.diagnostic-state-provisional_strength { border-inline-start: 3px solid var(--emerald-dark); padding-inline-start: .5rem; }
+.diagnostic-summary { font-size: 1.125rem; font-weight: 650; }
+.diagnostic-workspace ul:not(.diagnostic-list), .diagnostic-workspace ol { padding-inline-start: 1.5rem; }
+.diagnostic-feedback-item { border-block-start: 1px solid var(--border); padding-block: 1rem; }
+@media (max-width: 768px) {
+  .diagnostic-page { padding: 4.75rem 1rem 2rem; }
+  .diagnostic-fields, .diagnostic-evidence-grid { grid-template-columns: minmax(0, 1fr); }
+  .diagnostic-workspace > section, .diagnostic-workspace > form { padding: 1rem; }
+  .diagnostic-workspace fieldset { padding: .75rem; }
+  .diagnostic-actions > button { flex: 1 1 10rem; }
+}
+@media (prefers-reduced-motion: reduce) { .diagnostic-page *, .diagnostic-page *::before, .diagnostic-page *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+.practice-page { width: 100%; max-width: 48rem; min-width: 0; margin: 0 auto; padding: 2rem 1rem; }
+.main-content.practice-main { overflow-y: auto; }
+@media (max-width: 768px) { .practice-page { padding-block-start: 4.75rem; } }
+.practice-page > h1 { font-size: 1.5rem; font-weight: 700; }
+.practice-page > p, .practice-description { color: var(--text-secondary); margin-block: .75rem 1.5rem; }
+.reviewed-practice { padding: 1.5rem; overflow-wrap: anywhere; min-width: 0; }
+.reviewed-practice h2 { font-size: 1.125rem; font-weight: 700; }
+.reviewed-practice h3 { font-size: 1rem; font-weight: 600; }
+.practice-setup, .practice-questions, .practice-result { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.practice-setup select { min-width: 0; max-width: 100%; }
+.practice-questions fieldset { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; min-width: 0; }
+.practice-questions legend { padding-inline: .25rem; font-weight: 600; }
+.practice-option { display: flex; gap: .75rem; align-items: center; min-height: 2.75rem; cursor: pointer; }
+.practice-option input { flex-shrink: 0; }
+.practice-error { padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-md); margin-block: 1rem; }
+.practice-feedback { border-left: 3px solid var(--emerald); padding: .75rem 1rem; background: var(--bg-app); }
+.practice-feedback p + p { margin-top: .5rem; }
+.practice-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+.reviewed-practice button, .reviewed-practice .btn { min-height: 2.75rem; white-space: normal; }
+
 
 
 /* Light onboarding shell */
@@ -1030,7 +1099,13 @@ html, body { height: 100%; }
 }
 
 /* ── Mobile Responsive — Sidebar Collapse ── */
+.parent-learning-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.parent-learning-grid > div { min-width: 0; }
+.parent-dashboard .card { overflow-wrap: anywhere; }
+.parent-dashboard select { max-width: 100%; }
 @media (max-width: 768px) {
+  .parent-dashboard { padding: 64px 16px 24px !important; }
+  .parent-learning-grid { grid-template-columns: minmax(0, 1fr); }
   .mobile-hamburger-btn {
     display: flex !important;
   }
@@ -1039,6 +1114,7 @@ html, body { height: 100%; }
     position: fixed;
     top: 0;
     left: -260px;
+    visibility: hidden;
     height: 100vh;
     z-index: 1000;
     transition: left 0.25s ease;
@@ -1047,6 +1123,11 @@ html, body { height: 100%; }
 
   .sidebar.open {
     left: 0;
+    visibility: visible;
+  }
+
+  .sidebar button, .sidebar select, .sidebar nav a {
+    min-height: 44px;
   }
 
   /* Give main content full width on mobile */
@@ -1458,5 +1539,3 @@ html, body { height: 100%; }
   background: radial-gradient(circle at 50% 20%, rgba(5, 150, 105, 0.15) 0%, rgba(13, 148, 136, 0.08) 35%, transparent 70%);
   z-index: 0;
 }
-
-

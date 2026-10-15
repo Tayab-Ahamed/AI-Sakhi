@@ -9,6 +9,7 @@ Revocation checks are cached in-process for a few seconds so the hot auth path
 does not hit SQLite on every single request, while logout still takes effect
 almost immediately.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -36,8 +37,18 @@ _cache_lock = threading.Lock()
 
 MIN_PASSWORD_LENGTH = 8
 COMMON_PASSWORDS = {
-    "password", "password1", "12345678", "123456789", "qwerty123", "iloveyou",
-    "admin123", "letmein1", "welcome1", "sakhi123", "student1", "teacher1",
+    "password",
+    "password1",
+    "12345678",
+    "123456789",
+    "qwerty123",
+    "iloveyou",
+    "admin123",
+    "letmein1",
+    "welcome1",
+    "sakhi123",
+    "student1",
+    "teacher1",
 }
 
 
@@ -62,8 +73,8 @@ def verify_password(plain: str, hashed: str) -> bool:
     try:
         if bcrypt.checkpw(digest, encoded):
             return True
-    except Exception:
-        pass
+    except (ValueError, TypeError):
+        return False
     try:  # legacy hashes created directly from the raw password
         return bcrypt.checkpw(plain.encode("utf-8")[:72], encoded)
     except Exception:
@@ -112,6 +123,11 @@ def _cache_set(jti: str, valid: bool) -> None:
 def _cache_invalidate(jti: str) -> None:
     with _cache_lock:
         _revocation_cache.pop(jti, None)
+
+
+def invalidate_session_cache(jti: str) -> None:
+    """Invalidate a revoked session immediately in this process."""
+    _cache_invalidate(jti)
 
 
 def issue_session_token(user_id: int, expires_in_hours: int | None = None) -> dict:
@@ -220,6 +236,19 @@ def verify_session_token(token: str) -> dict | None:
     jti = payload.get("jti") or token
     if not _session_is_live(jti, token):
         return None
+    # Re-read authorization claims so school moves, suspension and demotion take
+    # effect on the next request, even while the revocation result is cached.
+    conn = get_connection()
+    try:
+        user = conn.execute(
+            "SELECT role,organization_id,is_active FROM users WHERE id=?", (payload["sub"],)
+        ).fetchone()
+    finally:
+        conn.close()
+    if not user or user["is_active"] == 0:
+        return None
+    payload["role"] = user["role"]
+    payload["org"] = user["organization_id"]
     return payload
 
 
@@ -227,7 +256,9 @@ def logout_session_token(token: str):
     """Revoke a token so it cannot be used again."""
     jti = token
     try:
-        decoded = jwt.decode(token, _SECRET, algorithms=[_ALGORITHM], options={"verify_exp": False, "verify_aud": False})
+        decoded = jwt.decode(
+            token, _SECRET, algorithms=[_ALGORITHM], options={"verify_exp": False, "verify_aud": False}
+        )
         jti = decoded.get("jti") or token
     except jwt.InvalidTokenError:
         pass

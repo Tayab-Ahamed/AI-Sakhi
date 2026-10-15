@@ -1,6 +1,6 @@
 // Session time tracker — logs study duration per module
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { BASE_URL, readCookie } from "./api";
 
 let _start: number | null = null;
 let _module = "";
@@ -21,8 +21,7 @@ export function stopTimer() {
     module: _module,
     duration_seconds: duration,
   });
-  let token = "";
-  try { token = JSON.parse(localStorage.getItem("sakhi_auth") || "{}").token || ""; } catch { token = ""; }
+  const csrf = readCookie("sakhi_csrf");
   fetch(`${BASE_URL}/analytics/session-end`, {
     method: "POST",
     body: payload,
@@ -30,7 +29,7 @@ export function stopTimer() {
     keepalive: true,
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(csrf ? { "X-CSRF-Token": csrf } : {}),
     },
   }).catch(() => {});
   _start = null;

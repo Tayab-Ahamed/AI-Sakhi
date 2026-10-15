@@ -2,9 +2,9 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 
-import { api } from "@/lib/api";
-import { isTokenExpired } from "@/lib/auth";
+import { api, ApiError } from "@/lib/api";
 import { getSessionId, getStoredAuth, getStoredUser, SakhiAuth, SakhiUser, saveStoredAuth, saveStoredUser } from "@/lib/user";
+import { clearDeviceData } from "@/lib/device-data";
 
 type UserContextValue = {
   user: SakhiUser | null;
@@ -14,7 +14,7 @@ type UserContextValue = {
   setUser: (user: SakhiUser | null, auth?: SakhiAuth | null) => void;
   refreshUser: () => Promise<void>;
   updateProfile: (patch: Partial<SakhiUser>) => Promise<SakhiUser | null>;
-  clearUser: () => void;
+  clearUser: () => Promise<void>;
 };
 
 const UserContext = createContext<UserContextValue | null>(null);
@@ -28,33 +28,51 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    const storedUser = getStoredUser();
-    const storedAuth = getStoredAuth();
-    queueMicrotask(() => {
-      if (storedAuth?.token && isTokenExpired(storedAuth.token)) {
-        saveStoredAuth(null);
-      } else {
-        setAuthState(storedAuth);
-      }
-      setUserState(storedUser);
-      setIsReady(true);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!auth?.token) return;
     let ignore = false;
-    // Verify with backend (non-blocking)
-    api.verifyToken({ token: auth.token }).catch(() => {
-      if (!ignore) {
-        setAuthState(null);
-        saveStoredAuth(null);
+    async function restore() {
+      getStoredAuth(); // erase credentials left by older versions
+      try {
+        if (localStorage.getItem("sakhi_logout_pending")) {
+          try {
+            await api.logout({ token: "" });
+          } catch (error) {
+            if (!(error instanceof ApiError && error.status === 401)) throw error;
+          }
+          localStorage.removeItem("sakhi_logout_pending");
+          return;
+        }
+        const current = await api.getSession() as unknown as { user: SakhiUser; auth: SakhiAuth };
+        if (!ignore) {
+          setUserState(current.user);
+          setAuthState(current.auth);
+          saveStoredUser(current.user);
+          saveStoredAuth(current.auth);
+        }
+      } catch (error) {
+        if (error instanceof ApiError && [401, 403].includes(error.status)) {
+          const cachedUser = getStoredUser();
+          try { await clearDeviceData(cachedUser?.user_id); }
+          catch {
+            saveStoredAuth(null);
+            localStorage.setItem("sakhi_logout_pending", "true");
+          }
+        }
+        if (!ignore && !navigator.onLine && !localStorage.getItem("sakhi_logout_pending")) {
+          const cached = getStoredAuth();
+          if (cached && new Date(cached.expires_at).getTime() > Date.now()) {
+            setUserState(getStoredUser());
+            setAuthState(cached);
+          }
+        }
+      } finally {
+        if (!ignore) setIsReady(true);
       }
-    });
+    }
+    void restore();
     return () => {
       ignore = true;
     };
-  }, [auth?.token]);
+  }, []);
 
   useEffect(() => {
     if (!user?.user_id) return;
@@ -112,8 +130,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const clearUser = () => {
+  const clearUser = async () => {
+    localStorage.setItem("sakhi_logout_pending", "true");
+    try {
+      await api.logout({ token: "" });
+      localStorage.removeItem("sakhi_logout_pending");
+    } catch {
+      // The next online mount must revoke the cookie before restoring a session.
+    }
     setUser(null, null);
+    await clearDeviceData(user?.user_id);
     if (typeof window !== "undefined") {
       sessionStorage.removeItem("sakhi_session");
     }

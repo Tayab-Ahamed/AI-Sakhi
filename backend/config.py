@@ -5,6 +5,7 @@ configuration fails loudly at import time instead of silently degrading at
 runtime. Module-level constants are kept for backwards compatibility with the
 existing imports across the codebase.
 """
+
 from __future__ import annotations
 
 import os
@@ -77,12 +78,17 @@ class Settings:
     groq_vision_model: str = field(
         default_factory=lambda: _str("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
     )
-    llm_timeout_seconds: float = field(default_factory=lambda: _float("LLM_TIMEOUT_SECONDS", 45.0, 1.0, 300.0))
+    llm_timeout_seconds: float = field(
+        default_factory=lambda: _float("LLM_TIMEOUT_SECONDS", 45.0, 1.0, 300.0)
+    )
     llm_max_retries: int = field(default_factory=lambda: _int("LLM_MAX_RETRIES", 2, 0, 5))
     llm_cache_ttl_seconds: int = field(default_factory=lambda: _int("LLM_CACHE_TTL_SECONDS", 900, 0, 86_400))
     llm_cache_max_entries: int = field(default_factory=lambda: _int("LLM_CACHE_MAX_ENTRIES", 256, 0, 10_000))
 
     # Storage
+    ai_approval_mode: str = field(default_factory=lambda: _str("SAKHI_AI_APPROVAL_MODE", "unconfigured"))
+    privacy_policy_version: str = field(default_factory=lambda: _str("SAKHI_PRIVACY_POLICY_VERSION"))
+    chat_retention_days: int = field(default_factory=lambda: _int("SAKHI_CHAT_RETENTION_DAYS", 0, 0, 3650))
     db_path: str = field(default_factory=lambda: _str("DB_PATH", "./sakhi.db"))
     chroma_path: str = field(default_factory=lambda: _str("CHROMA_PATH", "./chroma_db"))
 
@@ -92,13 +98,21 @@ class Settings:
     )
     rag_max_distance: float = field(default_factory=lambda: _float("RAG_MAX_DISTANCE", 0.72, 0.0, 2.0))
     rag_candidate_multiplier: int = field(default_factory=lambda: _int("RAG_CANDIDATE_MULTIPLIER", 4, 1, 20))
-    rag_catalog_ttl_seconds: int = field(default_factory=lambda: _int("RAG_CATALOG_TTL_SECONDS", 300, 0, 86_400))
+    rag_catalog_ttl_seconds: int = field(
+        default_factory=lambda: _int("RAG_CATALOG_TTL_SECONDS", 300, 0, 86_400)
+    )
 
     # HTTP
     backend_url: str = field(default_factory=lambda: _str("BACKEND_URL", "http://localhost:8000"))
-    allowed_origins: list[str] = field(default_factory=lambda: _csv("ALLOWED_ORIGINS", "http://localhost:3000"))
-    max_json_body_bytes: int = field(default_factory=lambda: _int("MAX_JSON_BODY_BYTES", 1_048_576, 1024, 33_554_432))
-    max_upload_bytes: int = field(default_factory=lambda: _int("MAX_UPLOAD_BYTES", 10_485_760, 1024, 52_428_800))
+    allowed_origins: list[str] = field(
+        default_factory=lambda: _csv("ALLOWED_ORIGINS", "http://localhost:3000")
+    )
+    max_json_body_bytes: int = field(
+        default_factory=lambda: _int("MAX_JSON_BODY_BYTES", 1_048_576, 1024, 33_554_432)
+    )
+    max_upload_bytes: int = field(
+        default_factory=lambda: _int("MAX_UPLOAD_BYTES", 10_485_760, 1024, 52_428_800)
+    )
     max_pdf_pages: int = field(default_factory=lambda: _int("MAX_PDF_PAGES", 50, 1, 500))
 
     # Feature flags
@@ -123,6 +137,12 @@ class Settings:
     def validation_errors(self) -> list[str]:
         """Return blocking configuration problems. Empty list means healthy."""
         errors: list[str] = []
+        if self.ai_approval_mode not in {"unconfigured", "guardian", "school"}:
+            errors.append("SAKHI_AI_APPROVAL_MODE must be unconfigured, guardian or school")
+        if self.ai_approval_mode != "unconfigured" and not self.privacy_policy_version:
+            errors.append("SAKHI_PRIVACY_POLICY_VERSION is required for configured AI approval")
+        if len(self.privacy_policy_version) > 100:
+            errors.append("SAKHI_PRIVACY_POLICY_VERSION must be at most 100 characters")
         if not self.is_production:
             return errors
         if len(self.jwt_secret.encode()) < 32 or self.using_dev_jwt_secret:

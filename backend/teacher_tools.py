@@ -2,9 +2,9 @@
 Phase 10 — Teacher Tools
 Business logic for teacher-created assignments and student submission tracking.
 """
+
 from __future__ import annotations
 
-import json
 import sqlite3
 from datetime import UTC, datetime
 
@@ -24,6 +24,7 @@ def _conn() -> sqlite3.Connection:
 # ──────────────────────────────────────────────────────────────
 # Assignments
 # ──────────────────────────────────────────────────────────────
+
 
 def create_assignment(
     teacher_id: int,
@@ -47,8 +48,19 @@ def create_assignment(
              instructions, due_date, created_at, updated_at, is_active)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         """,
-        (teacher_id, organization_id, title.strip(), subject.strip(), topic.strip(),
-         difficulty, class_, instructions.strip(), due_date, now, now),
+        (
+            teacher_id,
+            organization_id,
+            title.strip(),
+            subject.strip(),
+            topic.strip(),
+            difficulty,
+            class_,
+            instructions.strip(),
+            due_date,
+            now,
+            now,
+        ),
     )
     row_id = cur.lastrowid
     conn.commit()
@@ -103,7 +115,7 @@ def list_assignments(
         clauses.append("is_active = 1")
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     rows = cur.execute(
-        f"SELECT * FROM assignments {where} ORDER BY created_at DESC",
+        f"SELECT * FROM assignments {where} ORDER BY created_at DESC",  # noqa: S608 - fixed SQL fragments/identifiers; values are bound
         params,
     ).fetchall()
     assignments = [_enrich_assignment(dict(r)) for r in rows]
@@ -135,6 +147,7 @@ def delete_assignment(assignment_id: int, teacher_id: int) -> bool:
 # ──────────────────────────────────────────────────────────────
 # Student Submissions
 # ──────────────────────────────────────────────────────────────
+
 
 def get_student_assignments(user_id: int, organization_id: int | None = None) -> list[dict]:
     """Return active assignments relevant to a student (their org + class)."""
@@ -234,6 +247,7 @@ def get_assignment_submissions(assignment_id: int) -> list[dict]:
 # Report Generation (text → frontend renders to PDF)
 # ──────────────────────────────────────────────────────────────
 
+
 def generate_student_report_data(user_id: int) -> dict:
     """Aggregate all data needed to render a student progress PDF report."""
     conn = _conn()
@@ -253,6 +267,7 @@ def generate_student_report_data(user_id: int) -> dict:
 
     # Streak
     from backend.db import get_streak
+
     streak = get_streak(user_id)
 
     # Assignments
@@ -301,6 +316,7 @@ def generate_student_report_data(user_id: int) -> dict:
 # Helpers
 # ──────────────────────────────────────────────────────────────
 
+
 def _enrich_assignment(a: dict) -> dict:
     """Add computed fields to an assignment dict."""
     due = a.get("due_date")
@@ -318,6 +334,7 @@ def _enrich_assignment(a: dict) -> dict:
 def get_organization_roster(organization_id: int) -> list[dict]:
     """Get student roster in the organization, including streak, XP, and weak subject."""
     from backend.db import get_streak, get_user_xp
+
     conn = _conn()
     cur = conn.cursor()
     rows = cur.execute(
@@ -343,7 +360,7 @@ def get_class_analytics(organization_id: int) -> dict:
     """Calculate overall class quiz average score, assignment completion rate, and count of struggling students."""
     conn = _conn()
     cur = conn.cursor()
-    
+
     # 1. Overall quiz average score pct
     avg_row = cur.execute(
         """
@@ -360,12 +377,12 @@ def get_class_analytics(organization_id: int) -> dict:
         "SELECT COUNT(*) FROM assignments WHERE organization_id = ? AND is_active = 1",
         (organization_id,),
     ).fetchone()[0]
-    
+
     total_students = cur.execute(
         "SELECT COUNT(*) FROM users WHERE organization_id = ? AND role = 'student'",
         (organization_id,),
     ).fetchone()[0]
-    
+
     completed_subs = cur.execute(
         """
         SELECT COUNT(*) FROM assignment_submissions s
@@ -374,7 +391,7 @@ def get_class_analytics(organization_id: int) -> dict:
         """,
         (organization_id,),
     ).fetchone()[0]
-    
+
     expected = active_assigns * total_students
     completion_rate = round((completed_subs / expected) * 100, 1) if expected > 0 else 0.0
 

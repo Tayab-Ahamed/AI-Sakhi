@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -22,6 +22,8 @@ import { toggleTheme, initTheme, getTheme, type Theme } from "@/lib/theme";
 const STUDENT_NAV = [
   { href: "/chat",           icon: MessageSquare,  label: "Chat with Sakhi" },
   { href: "/quiz",           icon: Zap,            label: "Quiz Practice"   },
+  { href: "/practice",       icon: ClipboardList,  label: "School Practice" },
+  { href: "/diagnostics",    icon: Target,         label: "Diagnostics"     },
   { href: "/dashboard",      icon: LayoutDashboard, label: "My Dashboard"   },
   { href: "/goals",          icon: Target,          label: "Learning Goals"  },
   { href: "/mastery",        icon: BarChart2,      label: "Topic Mastery"   },
@@ -36,6 +38,7 @@ const STUDENT_NAV = [
 
 const TEACHER_NAV = [
   { href: "/teacher",   icon: GraduationCap, label: "Teacher Dashboard" },
+  { href: "/teacher/diagnostics", icon: Target, label: "Diagnostic editor" },
   { href: "/chat",      icon: MessageSquare, label: "AI Assistant"      },
   { href: "/quiz",      icon: Zap,           label: "Generate Quiz"     },
   { href: "/export",    icon: FileDown,      label: "Export Reports"    },
@@ -48,6 +51,7 @@ const PARENT_NAV = [
 
 const ADMIN_NAV = [
   { href: "/admin",     icon: Shield,        label: "Admin Console"     },
+  { href: "/teacher/diagnostics", icon: Target, label: "Diagnostic editor" },
   { href: "/teacher",   icon: GraduationCap, label: "Teacher Tools"     },
   { href: "/parent",    icon: Users,         label: "Parent View"       },
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard"       },
@@ -57,10 +61,10 @@ const ADMIN_NAV = [
 
 function getNavItems(role: string) {
   switch (role) {
-    case "teacher": return TEACHER_NAV;
-    case "parent":  return PARENT_NAV;
-    case "admin":   return ADMIN_NAV;
-    default:        return STUDENT_NAV;
+    case "teacher": return [...TEACHER_NAV, { href: "/governance", icon: Shield, label: "Safeguarding" }, { href: "/privacy", icon: Shield, label: "Privacy & Sessions" }];
+    case "parent":  return [...PARENT_NAV, { href: "/privacy", icon: Shield, label: "Privacy & Sessions" }];
+    case "admin":   return [...ADMIN_NAV, { href: "/governance", icon: Shield, label: "Governance Review" }, { href: "/privacy", icon: Shield, label: "Privacy & Sessions" }];
+    default:        return [...STUDENT_NAV, { href: "/privacy", icon: Shield, label: "Privacy & Sessions" }];
   }
 }
 
@@ -72,6 +76,8 @@ function getRoleAccent(role: string) {
 const LANGUAGES = ["English", "Hinglish", "Hindi", "Kannada", "Tamil"] as const;
 
 export default function Sidebar() {
+  const menuId = useId();
+  const menuToggle = useRef<HTMLButtonElement>(null);
   const path = usePathname();
   const router = useRouter();
   const [ragReady, setRagReady] = useState<boolean | null>(null);
@@ -96,6 +102,15 @@ export default function Sidebar() {
   }, []);
 
   useEffect(() => {
+    if (!mobileOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setMobileOpen(false); menuToggle.current?.focus(); }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [mobileOpen]);
+
+  useEffect(() => {
     let ignore = false;
     api.getRagStats()
       .then((stats) => {
@@ -113,7 +128,7 @@ export default function Sidebar() {
     catch { alert("Could not save your language preference."); }
   };
 
-  const handleLogout = () => { clearUser(); router.push("/"); };
+  const handleLogout = async () => { await clearUser(); router.push("/"); };
 
   const handleNewSession = async () => {
     const sid = typeof window !== "undefined" ? localStorage.getItem("sakhi_chat_session_id") : null;
@@ -137,8 +152,11 @@ export default function Sidebar() {
     <>
       {/* Mobile hamburger button */}
       <button
+        ref={menuToggle}
         type="button"
         aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
+        aria-expanded={mobileOpen}
+        aria-controls={menuId}
         onClick={() => setMobileOpen((v) => !v)}
         className="mobile-hamburger-btn"
         style={{
@@ -146,8 +164,8 @@ export default function Sidebar() {
           top: 14,
           left: 14,
           zIndex: 1100,
-          width: 40,
-          height: 40,
+          width: 44,
+          height: 44,
           borderRadius: 10,
           background: "var(--bg-surface)",
           border: "1px solid var(--border)",
@@ -170,7 +188,7 @@ export default function Sidebar() {
         />
       )}
 
-      <aside className={`sidebar ${mobileOpen ? "open" : ""}`} style={{ overflowY: "auto" }}>
+      <aside id={menuId} className={`sidebar ${mobileOpen ? "open" : ""}`} style={{ overflowY: "auto" }}>
 
         {/* ── Logo ── */}
         <div className="sidebar-logo" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -241,7 +259,7 @@ export default function Sidebar() {
         <div className="sidebar-section-label" style={{ paddingTop: 0 }}>Language</div>
         <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
           <Globe size={14} style={{ position: "absolute", left: 10, color: "var(--text-muted)", pointerEvents: "none" }} />
-          <select className="input input-select" value={user?.language || "English"} onChange={handleLangChange}
+          <select aria-label="Language" className="input input-select" value={user?.language || "English"} onChange={handleLangChange}
             style={{ paddingLeft: 30, paddingTop: 0, paddingBottom: 0, fontSize: 13, height: 36, borderRadius: "var(--radius-md)", borderColor: accent + "40" }}>
             {LANGUAGES.map((l) => <option key={l} value={l}>{l}</option>)}
           </select>
@@ -286,7 +304,7 @@ export default function Sidebar() {
           <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
             <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>A</span>
             {(["sm", "md", "lg"] as const).map((s) => (
-              <button key={s} onClick={() => setFontSize(s)} style={{
+              <button key={s} aria-label={s === "sm" ? "Small text" : s === "lg" ? "Large text" : "Standard text"} aria-pressed={fontSize === s} onClick={() => setFontSize(s)} style={{
                 flex: 1, padding: "4px 0", borderRadius: "var(--radius-sm)",
                 border: `1.5px solid ${fontSize === s ? accent : "var(--border)"}`,
                 background: fontSize === s ? accent + "18" : "white", cursor: "pointer",

@@ -8,6 +8,7 @@ Design notes:
   * the catalog scan is cached with a TTL instead of reading 10k metadata rows
     on every request.
 """
+
 from __future__ import annotations
 
 import logging
@@ -21,9 +22,32 @@ logger = logging.getLogger("sakhi.rag")
 
 _collection: Any = None
 _collection_lock = threading.Lock()
+_client: Any = None
+_client_lock = threading.Lock()
 _catalog_cache: tuple[float, dict] | None = None
 
 COLLECTION_NAME = "ncert_chunks"
+
+
+def _get_client():
+    global _client
+    if _client is None:
+        with _client_lock:
+            if _client is None:
+                import chromadb
+
+                _client = chromadb.PersistentClient(path=settings.chroma_path)
+    return _client
+
+
+def _metadata_collection():
+    """Read an existing index without model loading or creating an empty index."""
+    from chromadb.errors import NotFoundError
+
+    try:
+        return _get_client().get_collection(name=COLLECTION_NAME, embedding_function=None)
+    except NotFoundError:
+        return None
 
 
 def get_collection():
@@ -33,14 +57,10 @@ def get_collection():
         return _collection
     with _collection_lock:
         if _collection is None:
-            import chromadb
             from chromadb.utils import embedding_functions
 
-            client = chromadb.PersistentClient(path=settings.chroma_path)
-            ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name=settings.embedding_model
-            )
-            _collection = client.get_or_create_collection(
+            ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name=settings.embedding_model)
+            _collection = _get_client().get_or_create_collection(
                 name=COLLECTION_NAME,
                 embedding_function=ef,
                 metadata={"hnsw:space": "cosine", "embedding_model": settings.embedding_model},
@@ -50,9 +70,10 @@ def get_collection():
 
 def reset_collection() -> None:
     """Testing hook: drop cached handles."""
-    global _collection, _catalog_cache
+    global _collection, _catalog_cache, _client
     _collection = None
     _catalog_cache = None
+    _client = None
 
 
 def _citation_label(meta: dict) -> str:
@@ -88,7 +109,7 @@ def retrieve_evidence(query: str, n_results: int = 4, filters: dict | None = Non
         distances = (result.get("distances") or [[]])[0]
 
         evidence: list[dict] = []
-        for index, (doc, meta, distance) in enumerate(zip(docs, metas, distances)):
+        for index, (doc, meta, distance) in enumerate(zip(docs, metas, distances, strict=False)):
             if distance is not None and float(distance) > settings.rag_max_distance:
                 continue
             meta = meta or {}
@@ -144,7 +165,12 @@ def format_evidence(evidence: list[dict]) -> str:
         attrs = [f"Source: {item['source']}"]
         if item.get("page") is not None:
             attrs.append(f"Page: {item['page']}")
-        for label, key in (("Board", "board"), ("Class", "class_level"), ("Subject", "subject"), ("Chapter", "chapter")):
+        for label, key in (
+            ("Board", "board"),
+            ("Class", "class_level"),
+            ("Subject", "subject"),
+            ("Chapter", "chapter"),
+        ):
             if item.get(key):
                 attrs.append(f"{label}: {item[key]}")
         blocks.append(f"[Evidence {index} | {' | '.join(attrs)}]\n{item['text']}")
@@ -168,14 +194,16 @@ def retrieve(query: str, n_results: int = 4, filters: dict | None = None) -> dic
 
 def is_rag_ready() -> bool:
     try:
-        return get_collection().count() > 0
+        col = _metadata_collection()
+        return col is not None and col.count() > 0
     except Exception:
         return False
 
 
 def get_rag_stats() -> dict:
     try:
-        count = get_collection().count()
+        col = _metadata_collection()
+        count = col.count() if col is not None else 0
     except Exception:
         count = 0
     return {
@@ -196,7 +224,9 @@ def get_rag_catalog() -> dict:
         return _catalog_cache[1]
 
     try:
-        col = get_collection()
+        col = _metadata_collection()
+        if col is None:
+            return empty
         count = col.count()
         if not count:
             return empty

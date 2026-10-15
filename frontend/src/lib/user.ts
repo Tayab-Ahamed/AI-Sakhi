@@ -19,7 +19,7 @@ export type SakhiUser = {
 };
 
 export type SakhiAuth = {
-  token: string;
+  token?: string;
   token_type: string;
   expires_at: string;
   user_id: number;
@@ -52,7 +52,10 @@ export function getStoredAuth(): SakhiAuth | null {
   const raw = localStorage.getItem(AUTH_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as SakhiAuth;
+    const metadata = JSON.parse(raw) as SakhiAuth;
+    delete metadata.token;
+    localStorage.setItem(AUTH_KEY, JSON.stringify(metadata));
+    return metadata;
   } catch {
     return null;
   }
@@ -61,7 +64,9 @@ export function getStoredAuth(): SakhiAuth | null {
 export function saveStoredAuth(auth: SakhiAuth | null) {
   if (typeof window === "undefined") return;
   if (auth) {
-    localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
+    const metadata = { ...auth };
+    delete metadata.token;
+    localStorage.setItem(AUTH_KEY, JSON.stringify(metadata));
   } else {
     localStorage.removeItem(AUTH_KEY);
   }
@@ -71,7 +76,7 @@ export function getSessionId() {
   if (typeof window === "undefined") return "session_ssr";
   const existing = sessionStorage.getItem(SESSION_KEY);
   if (existing) return existing;
-  const created = `session_${Date.now()}`;
+  const created = `session_${crypto.randomUUID()}`;
   sessionStorage.setItem(SESSION_KEY, created);
   return created;
 }

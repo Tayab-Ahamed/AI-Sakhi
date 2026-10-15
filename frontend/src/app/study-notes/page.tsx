@@ -150,14 +150,14 @@ export default function StudyNotesPage() {
               <div className="card" style={{ padding: "20px 24px", marginBottom: 20 }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
                   <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Subject</label>
-                    <select className="input input-select" value={selectedSub} onChange={(e) => { setSelectedSubState(e.target.value); setTopicState(""); }}>
+                    <label htmlFor="notes-subject" style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Subject</label>
+                    <select id="notes-subject" className="input input-select" value={selectedSub} onChange={(e) => { setSelectedSubState(e.target.value); setTopicState(""); }}>
                       {subjects.map((s) => <option key={(s as { id: string }).id} value={(s as { id: string }).id}>{(s as { label?: string }).label || (s as { id: string }).id}</option>)}
                     </select>
                   </div>
                   <div style={{ gridColumn: "2/-1" }}>
-                    <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Topic</label>
-                    <select className="input input-select" value={topic} onChange={(e) => setTopicState(e.target.value)}>
+                    <label htmlFor="notes-topic" style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Topic</label>
+                    <select id="notes-topic" className="input input-select" value={topic} onChange={(e) => setTopicState(e.target.value)}>
                       {topics.map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>

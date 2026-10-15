@@ -9,13 +9,14 @@ Migrations are plain SQL statements. They must be idempotent-safe: the runner
 skips any migration whose version is already recorded, and each migration runs
 inside a transaction.
 """
+
 from __future__ import annotations
 
 import logging
 import sqlite3
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Callable, Sequence
 
 logger = logging.getLogger("sakhi.migrations")
 
@@ -29,9 +30,7 @@ class Migration:
 
 
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
-    ).fetchone()
+    row = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
     return row is not None
 
 
@@ -77,8 +76,12 @@ def _m003_safety_events(conn: sqlite3.Connection) -> None:
         )
         """
     )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_safety_events_user ON safety_events(user_id, created_at DESC)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_safety_events_sev ON safety_events(severity, created_at DESC)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_safety_events_user ON safety_events(user_id, created_at DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_safety_events_sev ON safety_events(severity, created_at DESC)"
+    )
 
 
 def _m004_chat_messages(conn: sqlite3.Connection) -> None:
@@ -100,9 +103,7 @@ def _m004_chat_messages(conn: sqlite3.Connection) -> None:
         )
         """
     )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, id)"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, id)")
 
 
 def _m005_performance_indexes(conn: sqlite3.Connection) -> None:
@@ -142,6 +143,37 @@ def _m006_ai_evaluations(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_evals_run ON ai_evaluations(run_id)")
 
 
+def _m007_governance(conn: sqlite3.Connection) -> None:
+    """Converge both historical safeguarding schemas without deleting events."""
+    for column, ddl in {
+        "organization_id": "INTEGER",
+        "session_id": "TEXT",
+        "categories": "TEXT NOT NULL DEFAULT '[]'",
+        "source": "TEXT NOT NULL DEFAULT 'classifier'",
+        "blocked": "INTEGER NOT NULL DEFAULT 0",
+        "excerpt": "TEXT",
+        "acknowledged_at": "TEXT",
+        "acknowledged_by": "INTEGER",
+        "category": "TEXT NOT NULL DEFAULT 'unknown'",
+        "minimal_context": "TEXT",
+        "status": "TEXT DEFAULT 'open'",
+        "review_note": "TEXT",
+    }.items():
+        _add_column_if_missing(conn, "safety_events", column, ddl)
+    _add_column_if_missing(conn, "users", "processing_restricted", "INTEGER NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "privacy_requests", "reviewed_by", "INTEGER")
+    _add_column_if_missing(conn, "privacy_requests", "review_note", "TEXT")
+    _add_column_if_missing(conn, "privacy_requests", "organization_id", "INTEGER")
+    if _table_exists(conn, "users"):
+        if _table_exists(conn, "privacy_requests"):
+            conn.execute(
+                "UPDATE privacy_requests SET organization_id=(SELECT organization_id FROM users WHERE users.id=privacy_requests.user_id) WHERE organization_id IS NULL"
+            )
+        conn.execute(
+            "UPDATE safety_events SET organization_id=(SELECT organization_id FROM users WHERE users.id=safety_events.user_id) WHERE organization_id IS NULL"
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=1,
@@ -159,6 +191,90 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(version=4, name="chat_messages", python=_m004_chat_messages),
     Migration(version=5, name="performance_indexes", python=_m005_performance_indexes),
     Migration(version=6, name="ai_evaluations", python=_m006_ai_evaluations),
+    Migration(version=7, name="governance_schema_convergence", python=_m007_governance),
+    Migration(
+        version=8,
+        name="versioned_ai_approvals",
+        statements=(
+            """CREATE TABLE IF NOT EXISTS ai_approvals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            organization_id INTEGER,
+            actor_id INTEGER,
+            approval_mode TEXT NOT NULL,
+            policy_version TEXT NOT NULL,
+            granted INTEGER NOT NULL CHECK(granted IN (0,1)),
+            created_at TEXT NOT NULL
+        )""",
+            "CREATE INDEX IF NOT EXISTS idx_approvals_user ON ai_approvals(user_id, id DESC)",
+        ),
+    ),
+    Migration(
+        version=9,
+        name="reviewed_practice_attempts",
+        statements=(
+            """CREATE TABLE IF NOT EXISTS practice_attempts (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            organization_id INTEGER NOT NULL,
+            class_level TEXT NOT NULL,
+            creation_key TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            chapter TEXT NOT NULL,
+            requested_count INTEGER NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('active','completed')),
+            questions_json TEXT NOT NULL,
+            answers_json TEXT,
+            result_json TEXT,
+            created_at TEXT NOT NULL,
+            submitted_at TEXT,
+            UNIQUE(user_id, creation_key)
+        )""",
+            "CREATE INDEX IF NOT EXISTS idx_practice_user ON practice_attempts(user_id, created_at DESC)",
+        ),
+    ),
+    Migration(
+        version=10,
+        name="school_curated_diagnostics",
+        statements=(
+            """CREATE TABLE IF NOT EXISTS diagnostic_blueprints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL REFERENCES organizations(id),
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            creation_key TEXT NOT NULL, creation_fingerprint TEXT NOT NULL,
+            definition_json TEXT NOT NULL,
+            draft_revision INTEGER NOT NULL DEFAULT 1 CHECK(draft_revision > 0),
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+            UNIQUE(organization_id, created_by, creation_key), UNIQUE(id, organization_id)
+        )""",
+            """CREATE TABLE IF NOT EXISTS diagnostic_versions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            blueprint_id INTEGER NOT NULL, organization_id INTEGER NOT NULL,
+            class_level TEXT NOT NULL, subject TEXT NOT NULL,
+            version_number INTEGER NOT NULL CHECK(version_number > 0),
+            draft_revision INTEGER NOT NULL CHECK(draft_revision > 0),
+            snapshot_json TEXT NOT NULL,
+            published_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            published_at TEXT NOT NULL, withdrawn_at TEXT,
+            UNIQUE(blueprint_id, draft_revision), UNIQUE(blueprint_id, version_number),
+            UNIQUE(id, organization_id, class_level),
+            FOREIGN KEY(blueprint_id, organization_id)
+                REFERENCES diagnostic_blueprints(id, organization_id) ON DELETE RESTRICT
+        )""",
+            """CREATE TABLE IF NOT EXISTS diagnostic_attempts (
+            id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            organization_id INTEGER NOT NULL, class_level TEXT NOT NULL, version_id INTEGER NOT NULL,
+            creation_key TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('active','completed')),
+            answers_json TEXT, result_json TEXT, created_at TEXT NOT NULL, submitted_at TEXT,
+            UNIQUE(user_id, creation_key),
+            FOREIGN KEY(version_id, organization_id, class_level)
+                REFERENCES diagnostic_versions(id, organization_id, class_level) ON DELETE RESTRICT
+        )""",
+            "CREATE INDEX IF NOT EXISTS idx_diagnostic_school ON diagnostic_blueprints(organization_id,id)",
+            "CREATE INDEX IF NOT EXISTS idx_diagnostic_user ON diagnostic_attempts(user_id,created_at DESC)",
+        ),
+    ),
 )
 
 

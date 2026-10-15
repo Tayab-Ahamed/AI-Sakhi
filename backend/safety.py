@@ -13,12 +13,13 @@ The classifier is deliberately rule-based and dependency-free:
 An optional LLM second opinion can be layered on later for ambiguous text; the
 rule layer always has the final say for `crisis` severity.
 """
+
 from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
 
 SEVERITY_ORDER = {"none": 0, "low": 1, "medium": 2, "high": 3, "crisis": 4}
 
@@ -71,7 +72,13 @@ CATEGORY_PATTERNS: dict[str, tuple[str, re.Pattern[str]]] = {
     ),
     "violence_to_others": (
         "high",
-        _pattern([r"\bkill (?:him|her|them|everyone)\b", r"\bhurt (?:him|her|them) badly\b", r"\bbring a (?:knife|gun)\b"]),
+        _pattern(
+            [
+                r"\bkill (?:him|her|them|everyone)\b",
+                r"\bhurt (?:him|her|them) badly\b",
+                r"\bbring a (?:knife|gun)\b",
+            ]
+        ),
     ),
     "exam_cheating": (
         "medium",
@@ -89,7 +96,9 @@ CATEGORY_PATTERNS: dict[str, tuple[str, re.Pattern[str]]] = {
     ),
     "bullying": (
         "medium",
-        _pattern([r"\bbull(?:y|ied|ying)\b", r"\brag(?:ged|ging)\b", r"\bthey (?:tease|mock|humiliate) me\b"]),
+        _pattern(
+            [r"\bbull(?:y|ied|ying)\b", r"\brag(?:ged|ging)\b", r"\bthey (?:tease|mock|humiliate) me\b"]
+        ),
     ),
     "distress": (
         "medium",
@@ -109,11 +118,15 @@ CATEGORY_PATTERNS: dict[str, tuple[str, re.Pattern[str]]] = {
     ),
     "personal_data": (
         "low",
-        _pattern([r"\b\d{4}\s?\d{4}\s?\d{4}\b", r"\baadhaar\b", r"\bmy (?:home )?address is\b", r"\b\d{10}\b"]),
+        _pattern(
+            [r"\b\d{4}\s?\d{4}\s?\d{4}\b", r"\baadhaar\b", r"\bmy (?:home )?address is\b", r"\b\d{10}\b"]
+        ),
     ),
     "academic_dishonesty": (
         "low",
-        _pattern([r"\bwrite my (?:whole )?(?:exam|assignment) for me\b", r"\bgive me the answers? to the exam\b"]),
+        _pattern(
+            [r"\bwrite my (?:whole )?(?:exam|assignment) for me\b", r"\bgive me the answers? to the exam\b"]
+        ),
     ),
 }
 

@@ -9,14 +9,15 @@ Thresholds (based on average percentage):
   >= 55%  -> medium
   <  55%  -> easy
 """
+
 from __future__ import annotations
 
 import sqlite3
 
 from backend.config import DB_PATH
 
-_WINDOW = 5          # how many recent scores to look at
-_HARD_THRESHOLD   = 80.0
+_WINDOW = 5  # how many recent scores to look at
+_HARD_THRESHOLD = 80.0
 _MEDIUM_THRESHOLD = 55.0
 
 

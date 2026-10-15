@@ -1,24 +1,12 @@
 // Centralized API client for AI Sakhi backend
-// Includes: retry, timeout, JWT Bearer injection, typed helpers
+// Includes: read-only retry, timeout, cookie sessions and CSRF, typed helpers
+import type { PracticeAttempt, PracticeIntent, PracticeTopics } from "@/lib/practice";
+import type { DiagnosticAnswers, DiagnosticAttempt, DiagnosticBlueprint, DiagnosticCandidates, DiagnosticCreate, DiagnosticList, DiagnosticPage, DiagnosticPublish, DiagnosticSave, DiagnosticStart, DiagnosticVersion } from "@/lib/diagnostics";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export const BASE_URL = "/api/backend";
 const TIMEOUT_MS = 30_000; // 30 s
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 800;
-
-// The httpOnly session cookie is the primary credential. The stored token is
-// only a fallback for older sessions and non-browser callers.
-function getStoredToken(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem("sakhi_auth");
-    if (!raw) return null;
-    const auth = JSON.parse(raw) as { token?: string };
-    return auth.token || null;
-  } catch {
-    return null;
-  }
-}
 
 export function readCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
@@ -27,21 +15,29 @@ export function readCookie(name: string): string | null {
 }
 
 // Double-submit CSRF: the backend sets a readable cookie, we echo it in a header.
+let csrfRequest: Promise<void> | null = null;
 export async function ensureCsrfToken(): Promise<string | null> {
   const existing = readCookie("sakhi_csrf");
   if (existing) return existing;
   try {
-    await fetch(`${BASE_URL}/auth/csrf`, { credentials: "include" });
+    if (!csrfRequest) {
+      csrfRequest = fetch(`${BASE_URL}/auth/csrf`, { credentials: "include", cache: "no-store" })
+        .then((response) => { if (!response.ok) throw new Error("Unable to initialize session protection"); })
+        .finally(() => { csrfRequest = null; });
+    }
+    await csrfRequest;
   } catch {
     return null;
   }
   return readCookie("sakhi_csrf");
 }
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) { super(message); }
+}
+
 function authHeaders(base?: Record<string, string>): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json", ...(base || {}) };
-  const token = getStoredToken();
-  if (token) headers["Authorization"] = `Bearer ${token}`;
   const csrf = readCookie("sakhi_csrf");
   if (csrf) headers["X-CSRF-Token"] = csrf;
   return headers;
@@ -51,7 +47,7 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function apiFetch(path: string, options: RequestInit = {}, retries = MAX_RETRIES): Promise<Record<string, unknown>> {
+async function apiFetch<T = Record<string, unknown>>(path: string, options: RequestInit = {}, retries = MAX_RETRIES): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -73,7 +69,7 @@ async function apiFetch(path: string, options: RequestInit = {}, retries = MAX_R
     if (!res.ok) {
       if (retries > 0 && method === "GET" && [502, 503, 504].includes(res.status)) {
         await sleep(RETRY_DELAY_MS);
-        return apiFetch(path, options, retries - 1);
+        return apiFetch<T>(path, options, retries - 1);
       }
       let detail = `API error ${res.status}`;
       const text = await res.text().catch(() => "");
@@ -84,7 +80,7 @@ async function apiFetch(path: string, options: RequestInit = {}, retries = MAX_R
           detail = text;
         }
       }
-      throw new Error(detail);
+      throw new ApiError(detail, res.status);
     }
     return res.json();
   } catch (err: unknown) {
@@ -92,9 +88,9 @@ async function apiFetch(path: string, options: RequestInit = {}, retries = MAX_R
     const isAbort = err instanceof Error && err.name === "AbortError";
     const isNetworkError = err instanceof TypeError && err.message.includes("fetch");
 
-    if (retries > 0 && (isAbort || isNetworkError)) {
+    if (retries > 0 && method === "GET" && (isAbort || isNetworkError)) {
       await sleep(RETRY_DELAY_MS);
-      return apiFetch(path, options, retries - 1);
+      return apiFetch<T>(path, options, retries - 1);
     }
     throw err;
   }
@@ -104,9 +100,10 @@ async function apiFetch(path: string, options: RequestInit = {}, retries = MAX_R
 async function apiFormFetch(path: string, form: FormData): Promise<Record<string, unknown>> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  const token = getStoredToken();
+  await ensureCsrfToken();
   const headers: Record<string, string> = {};
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const csrf = readCookie("sakhi_csrf");
+  if (csrf) headers["X-CSRF-Token"] = csrf;
 
   try {
     const res = await fetch(`${BASE_URL}${path}`, {
@@ -146,6 +143,28 @@ type ChatParams = {
 // ── Exported API object ───────────────────────────────────────────────────────
 
 export const api = {
+  listDiagnosticBlueprints: (page: DiagnosticPage = {}) => apiFetch<DiagnosticList>(`/v2/diagnostics/blueprints?${new URLSearchParams(Object.entries(page).map(([key, value]) => [key, String(value)]))}`),
+  createDiagnosticBlueprint: (input: DiagnosticCreate) => apiFetch<DiagnosticBlueprint>("/v2/diagnostics/blueprints", { method: "POST", body: JSON.stringify(input) }),
+  getDiagnosticBlueprint: (id: number) => apiFetch<DiagnosticBlueprint>(`/v2/diagnostics/blueprints/${id}`),
+  saveDiagnosticBlueprint: (id: number, input: DiagnosticSave) => apiFetch<DiagnosticBlueprint>(`/v2/diagnostics/blueprints/${id}`, { method: "PUT", body: JSON.stringify(input) }),
+  getDiagnosticCandidates: (id: number, page: DiagnosticPage = {}) => apiFetch<DiagnosticCandidates>(`/v2/diagnostics/blueprints/${id}/questions?${new URLSearchParams(Object.entries(page).map(([key, value]) => [key, String(value)]))}`),
+  publishDiagnosticBlueprint: (id: number, input: DiagnosticPublish) => apiFetch<DiagnosticVersion>(`/v2/diagnostics/blueprints/${id}/publish`, { method: "POST", body: JSON.stringify(input) }),
+  withdrawDiagnosticVersion: (id: number) => apiFetch<DiagnosticVersion>(`/v2/diagnostics/versions/${id}/withdraw`, { method: "POST", body: "{}" }),
+  startDiagnostic: (input: DiagnosticStart) => apiFetch<DiagnosticAttempt>("/v2/diagnostics/attempts", { method: "POST", body: JSON.stringify(input) }),
+  getDiagnosticAttempt: (id: string) => apiFetch<DiagnosticAttempt>(`/v2/diagnostics/attempts/${encodeURIComponent(id)}`),
+  submitDiagnostic: (id: string, answers: DiagnosticAnswers) => apiFetch<DiagnosticAttempt>(`/v2/diagnostics/attempts/${encodeURIComponent(id)}/submission`, { method: "POST", body: JSON.stringify({ answers }) }),
+  getPracticeTopics: () => apiFetch<PracticeTopics>("/v2/practice/topics"),
+  startPractice: (intent: PracticeIntent) => apiFetch<PracticeAttempt>("/v2/practice/attempts", { method: "POST", body: JSON.stringify(intent) }),
+  getPracticeAttempt: (id: string) => apiFetch<PracticeAttempt>(`/v2/practice/attempts/${encodeURIComponent(id)}`),
+  submitPractice: (id: string, answers: Record<string, number>) => apiFetch<PracticeAttempt>(`/v2/practice/attempts/${encodeURIComponent(id)}/submission`, { method: "POST", body: JSON.stringify({ answers }) }),
+  getSession: () => apiFetch("/auth/session"),
+  getSessions: () => apiFetch("/auth/sessions"),
+  revokeSession: (id: string) => apiFetch(`/auth/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  getPrivacyRequests: () => apiFetch("/v2/privacy/requests"),
+  fulfilPrivacyRequest: (id: number) => apiFetch(`/v2/privacy/requests/${id}/fulfil`, { method: "POST", body: "{}" }),
+  getSafetyEvents: () => apiFetch("/v2/safety/events"),
+  acknowledgeSafetyEvent: (id: number) => apiFetch(`/v2/safety/events/${id}/acknowledge`, { method: "POST", body: "{}" }),
+  changeUserRole: (userId: number, role: string) => apiFetch(`/users/${userId}`, { method: "PUT", body: JSON.stringify({ role }) }),
   // ── Auth ──────────────────────────────────────────────────────────────────
   createUser: (data: { name: string; class_: string; language: string; weak_subject: string; role?: string; organization_id?: number; password?: string }) =>
     apiFetch("/user/create", { method: "POST", body: JSON.stringify(data) }),
@@ -326,7 +345,7 @@ export const api = {
     }),
   updateAssignment: (assignmentId: number, data: { title: string; subject: string; topic: string; difficulty: string; instructions?: string; due_date?: string }) =>
     apiFetch(`/assignments/${assignmentId}`, { method: "PUT", body: JSON.stringify(data) }),
-  getFeedbackSuggestions: (data: { topic: string; score: number; total: number; student_name?: string; language?: string }) =>
+  getFeedbackSuggestions: (data: { topic: string; score: number; total: number; student_id?: number; language?: string }) =>
     apiFetch("/ai/feedback-suggestion", { method: "POST", body: JSON.stringify(data) }),
 
   // ── Leaderboard ────────────────────────────────────────────────────────────
@@ -372,6 +391,9 @@ export const api = {
     apiFetch(`/v2/questions/${questionId}/review`, { method: "PUT", body: JSON.stringify({ status, note }) }),
 
   // ── Privacy, Guardians and Safety ─────────────────────────────────────────
+  getAiApproval: (userId: number) => apiFetch(`/v2/privacy/approvals/${userId}`),
+  decideAiApproval: (userId: number, granted: boolean, policyVersion: string) =>
+    apiFetch(`/v2/privacy/approvals/${userId}`, { method: "POST", body: JSON.stringify({ granted, policy_version: policyVersion }) }),
   exportMyData: (userId: number) => apiFetch(`/v2/privacy/export/${userId}`),
   requestPrivacyAction: (userId: number, requestType: "export" | "delete_account" | "delete_chat_history" | "restrict_processing") =>
     apiFetch("/v2/privacy/requests", { method: "POST", body: JSON.stringify({ user_id: userId, request_type: requestType }) }),

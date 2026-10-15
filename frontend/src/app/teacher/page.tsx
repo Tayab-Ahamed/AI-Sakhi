@@ -51,6 +51,7 @@ type Assignment = {
 
 type Submission = {
   id: number;
+  student_id: number;
   student_name: string;
   score: number;
   total_questions: number;
@@ -305,7 +306,7 @@ export default function TeacherPage() {
         topic: assignment.topic,
         score: submission.score,
         total: submission.total_questions,
-        student_name: submission.student_name,
+        student_id: submission.student_id,
         language: user?.language || "English",
       }) as { suggestions?: string[] };
       setFeedbackSuggestions(data.suggestions || []);
@@ -475,7 +476,7 @@ export default function TeacherPage() {
                   className="btn btn-primary btn-sm"
                   onClick={() => { setShowQuestionModal(true); setQuestionFormError(""); }}
                 >
-                  <Plus size={14} /> Add NCERT Question
+                  <Plus size={14} /> Add School Question
                 </button>
               )}
             </div>
@@ -584,13 +585,13 @@ export default function TeacherPage() {
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
                     <h2 style={{ fontSize: 17, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>Add Curriculum Question</h2>
-                    <button onClick={() => setShowQuestionModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}>
+                    <button aria-label="Close question editor" onClick={() => setShowQuestionModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}>
                       <X size={18} />
                     </button>
                   </div>
 
                   {questionFormError && (
-                    <div style={{ padding: "8px 12px", background: "#fee2e2", color: "#991b1b", borderRadius: 6, fontSize: 12, marginBottom: 14 }}>
+                    <div role="alert" style={{ padding: "8px 12px", background: "#fee2e2", color: "#991b1b", borderRadius: 6, fontSize: 12, marginBottom: 14 }}>
                       {questionFormError}
                     </div>
                   )}
@@ -624,17 +625,17 @@ export default function TeacherPage() {
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Subject *</label>
-                        <input className="input" value={newQuestion.subject} onChange={(e) => setNewQuestion(q => ({ ...q, subject: e.target.value }))} placeholder="Science" required />
+                        <input aria-label="Subject" className="input" value={newQuestion.subject} onChange={(e) => setNewQuestion(q => ({ ...q, subject: e.target.value }))} placeholder="Science" required />
                       </div>
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Chapter</label>
-                        <input className="input" value={newQuestion.chapter} onChange={(e) => setNewQuestion(q => ({ ...q, chapter: e.target.value }))} placeholder="Light & Reflection" />
+                        <input aria-label="Chapter" className="input" value={newQuestion.chapter} onChange={(e) => setNewQuestion(q => ({ ...q, chapter: e.target.value }))} placeholder="Light & Reflection" />
                       </div>
                     </div>
 
                     <div style={{ marginBottom: 12 }}>
                       <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Question Text *</label>
-                      <textarea className="input" rows={3} value={newQuestion.question_text} onChange={(e) => setNewQuestion(q => ({ ...q, question_text: e.target.value }))} placeholder="Enter question..." required />
+                      <textarea aria-label="Question Text" className="input" rows={3} value={newQuestion.question_text} onChange={(e) => setNewQuestion(q => ({ ...q, question_text: e.target.value }))} placeholder="Enter question..." required />
                     </div>
 
                     <div style={{ marginBottom: 12 }}>
@@ -652,6 +653,7 @@ export default function TeacherPage() {
                                 setNewQuestion(q => ({ ...q, options: copy }));
                               }}
                               placeholder={`Option ${String.fromCharCode(65 + idx)}`}
+                              aria-label={`Option ${String.fromCharCode(65 + idx)}`}
                             />
                           </div>
                         ))}
@@ -661,7 +663,7 @@ export default function TeacherPage() {
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Correct Answer *</label>
-                        <input className="input" value={newQuestion.correct_answer} onChange={(e) => setNewQuestion(q => ({ ...q, correct_answer: e.target.value }))} placeholder="A or exact answer" required />
+                        <input aria-label="Correct Answer" className="input" value={newQuestion.correct_answer} onChange={(e) => setNewQuestion(q => ({ ...q, correct_answer: e.target.value }))} placeholder="A or exact answer" required />
                       </div>
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Misconception Tag (Optional)</label>
@@ -671,7 +673,7 @@ export default function TeacherPage() {
 
                     <div style={{ marginBottom: 16 }}>
                       <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Explanation</label>
-                      <textarea className="input" rows={2} value={newQuestion.explanation} onChange={(e) => setNewQuestion(q => ({ ...q, explanation: e.target.value }))} placeholder="Step-by-step reasoning for the correct answer..." />
+                      <textarea aria-label="Explanation" className="input" rows={2} value={newQuestion.explanation} onChange={(e) => setNewQuestion(q => ({ ...q, explanation: e.target.value }))} placeholder="Step-by-step reasoning for the correct answer..." />
                     </div>
 
                     <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
@@ -1192,7 +1194,7 @@ export default function TeacherPage() {
               <div style={{ fontSize: 40, marginBottom: 12 }}>📚</div>
               <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>No Questions Found</h3>
               <p style={{ fontSize: 13, color: "var(--text-secondary)", maxWidth: 420, margin: "0 auto 16px" }}>
-                No curriculum questions match your current filters. Add your first verified NCERT question to enrich the school bank.
+                No curriculum questions match your current filters. Add a question for school review; textbook attribution must be checked by your school.
               </p>
               <button
                 className="btn btn-primary btn-sm"

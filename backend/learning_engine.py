@@ -1,4 +1,5 @@
 """Pure adaptive-learning logic used by API routes and offline evaluations."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -28,7 +29,7 @@ def classify_misconception(question: str, answer: str, expected: str, explanatio
 
 
 def mastery_score(attempts: list[dict], now: datetime | None = None) -> dict:
-    """Calculate explainable 0–100 mastery using accuracy, difficulty, recency and evidence."""
+    """Calculate explainable 0-100 mastery using accuracy, difficulty, recency and evidence."""
     if not attempts:
         return {"score": 0.0, "confidence": "low", "attempts": 0, "components": {}}
     now = now or datetime.now(UTC)
@@ -38,7 +39,8 @@ def mastery_score(attempts: list[dict], now: datetime | None = None) -> dict:
         timestamp = item.get("timestamp")
         try:
             dt = datetime.fromisoformat(timestamp) if timestamp else now
-            if dt.tzinfo is None: dt = dt.replace(tzinfo=UTC)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
             days = max(0.0, (now - dt).total_seconds() / 86400)
         except Exception:
             days = 30.0
@@ -54,10 +56,17 @@ def mastery_score(attempts: list[dict], now: datetime | None = None) -> dict:
     score = round(100 * weighted / max(possible, 0.001), 1)
     evidence = len(attempts)
     confidence = "high" if evidence >= 5 and recent_weight >= 2.5 else "medium" if evidence >= 3 else "low"
-    return {"score": score, "confidence": confidence, "attempts": evidence, "components": {"recent_evidence": round(recent_weight, 2), "weighted_accuracy": score}}
+    return {
+        "score": score,
+        "confidence": confidence,
+        "attempts": evidence,
+        "components": {"recent_evidence": round(recent_weight, 2), "weighted_accuracy": score},
+    }
 
 
-def build_smart_sprint(weak_topic: str | None, active_goal: str | None, due_cards: int, available_minutes: int = 25) -> dict:
+def build_smart_sprint(
+    weak_topic: str | None, active_goal: str | None, due_cards: int, available_minutes: int = 25
+) -> dict:
     minutes = max(10, min(60, available_minutes))
     topic = weak_topic or active_goal or "your priority subject"
     warmup = max(3, round(minutes * 0.2))
@@ -69,8 +78,25 @@ def build_smart_sprint(weak_topic: str | None, active_goal: str | None, due_card
         "total_minutes": minutes,
         "reason": "Selected from your weakest recent topic, active goal, and due reviews.",
         "steps": [
-            {"kind": "warmup", "minutes": warmup, "label": "Recall the key idea", "action": f"Explain what you already know about {topic}."},
-            {"kind": "practice", "minutes": practice, "label": "Focused practice", "action": f"Complete adaptive questions on {topic}."},
-            {"kind": "review", "minutes": recall, "label": "Lock it in", "action": f"Review {min(due_cards, 5)} due flashcards." if due_cards else "Write three ideas from memory."},
+            {
+                "kind": "warmup",
+                "minutes": warmup,
+                "label": "Recall the key idea",
+                "action": f"Explain what you already know about {topic}.",
+            },
+            {
+                "kind": "practice",
+                "minutes": practice,
+                "label": "Focused practice",
+                "action": f"Complete adaptive questions on {topic}.",
+            },
+            {
+                "kind": "review",
+                "minutes": recall,
+                "label": "Lock it in",
+                "action": f"Review {min(due_cards, 5)} due flashcards."
+                if due_cards
+                else "Write three ideas from memory.",
+            },
         ],
     }

@@ -1,4 +1,5 @@
 """Production observability primitives with no external service dependency."""
+
 from __future__ import annotations
 
 import json
@@ -7,8 +8,8 @@ import os
 import sys
 import time
 from datetime import UTC, datetime
-from uuid import uuid4
 from typing import Any
+from uuid import uuid4
 
 
 class JsonFormatter(logging.Formatter):
@@ -19,7 +20,15 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
-        for key in ("request_id", "method", "path", "status_code", "duration_ms", "user_id", "organization_id"):
+        for key in (
+            "request_id",
+            "method",
+            "path",
+            "status_code",
+            "duration_ms",
+            "user_id",
+            "organization_id",
+        ):
             value = getattr(record, key, None)
             if value is not None:
                 payload[key] = value
@@ -74,7 +83,13 @@ def init_error_monitoring() -> None:
         return
     try:
         import sentry_sdk
-        sentry_sdk.init(dsn=dsn, environment=os.getenv("SAKHI_ENV", "development"), traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")), send_default_pii=False)
+
+        sentry_sdk.init(
+            dsn=dsn,
+            environment=os.getenv("SAKHI_ENV", "development"),
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+            send_default_pii=False,
+        )
     except Exception:
         logging.getLogger("sakhi.monitoring").exception("Could not initialize error monitoring")
 

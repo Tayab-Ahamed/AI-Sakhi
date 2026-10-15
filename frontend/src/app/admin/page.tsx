@@ -49,14 +49,7 @@ export default function AdminPage() {
     await Promise.resolve();
     setLoading(true);
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("sakhi_auth") : null;
-      const headers: HeadersInit = token ? { "Authorization": `Bearer ${token}` } : {};
-      // Load users
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/users?organization_id=${user?.organization_id}`,
-        { headers }
-      );
-      const data = await res.json();
+      const data = await api.listUsers(user.organization_id) as { users: OrgUser[] };
       setUsers(data.users || []);
 
       // Load activity stats
@@ -91,13 +84,7 @@ export default function AdminPage() {
     if (!confirm(`Change ${userName}'s role to "${newRole}"? This affects what they can access.`)) return;
     setUpdatingId(userId);
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("sakhi_auth") : null;
-      const headers: HeadersInit = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/users/${userId}`,
-        { method: "PUT", headers, body: JSON.stringify({ role: newRole }) }
-      );
+      await api.changeUserRole(userId, newRole);
       setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, role: newRole } : u));
     } catch {
       alert("Could not update role.");
@@ -109,12 +96,7 @@ export default function AdminPage() {
   const deleteUser = async (userId: number, userName: string) => {
     if (!confirm(`Deactivate ${userName}? They will be removed from the system. This cannot be undone.`)) return;
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("sakhi_auth") : null;
-      const headers: HeadersInit = token ? { "Authorization": `Bearer ${token}` } : {};
-      await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/users/${userId}`,
-        { method: "DELETE", headers }
-      );
+      await api.deactivateUser(userId);
       setUsers((prev) => prev.filter((u) => u.id !== userId));
     } catch {
       alert("Could not deactivate user.");

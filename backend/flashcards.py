@@ -2,13 +2,14 @@
 Flashcard generation for AI Sakhi.
 Creates short study cards for school topics.
 """
+
 from __future__ import annotations
 
 import json
 import re
 
-from backend.llm import complete
 from backend.language import is_text_compatible_with_language, language_instruction, normalize_language
+from backend.llm import complete
 
 FLASHCARD_SYSTEM = (
     "You are a flashcard generator for Indian school students. "
@@ -68,23 +69,24 @@ def generate_flashcards(topic: str, class_: str = "8", language: str = "English"
         visible_text = " ".join(
             [deck.get("topic", "")]
             + [
-                " ".join([
-                    card.get("front", ""),
-                    card.get("back", ""),
-                    card.get("hint", ""),
-                ])
+                " ".join(
+                    [
+                        card.get("front", ""),
+                        card.get("back", ""),
+                        card.get("hint", ""),
+                    ]
+                )
                 for card in deck.get("cards", [])
             ]
         )
         if not is_text_compatible_with_language(visible_text, selected_language):
-            retry_messages = messages + [
+            retry_messages = [
+                *messages,
                 {
                     "role": "user",
-                    "content": (
-                        f"The flashcards were not fully in {selected_language}. "
-                        f"Regenerate them fully in proper {selected_language} only, including the correct script."
-                    ),
-                }
+                    "content": f"The flashcards were not fully in {selected_language}. "
+                    f"Regenerate them fully in proper {selected_language} only, including the correct script.",
+                },
             ]
             deck = _call(retry_messages)
         return {"success": True, "flashcards": deck}

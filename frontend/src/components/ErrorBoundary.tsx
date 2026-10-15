@@ -39,6 +39,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   private handleGoHome = () => {
     this.setState({ hasError: false, error: null });
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Recovery must discard the failed React tree.
     window.location.href = "/dashboard";
   };
 

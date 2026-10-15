@@ -41,6 +41,7 @@ def _user_from_row(row: sqlite3.Row | None) -> dict | None:
     if not row:
         return None
     data = dict(row)
+    data.pop("password_hash", None)
     data["user_id"] = data.pop("id")
     data["class_"] = data.pop("class")
     return data
@@ -159,9 +160,15 @@ def init_db():
     _ensure_column(cur, "chat_sessions", "organization_id", "INTEGER")
     _ensure_column(cur, "learning_events", "organization_id", "INTEGER")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_progress_user_time ON progress(user_id, timestamp DESC)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_events_type_time ON learning_events(event_type, created_at DESC)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_events_user_time ON learning_events(user_id, created_at DESC)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_time ON chat_sessions(user_id, updated_at DESC)")
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_events_type_time ON learning_events(event_type, created_at DESC)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_events_user_time ON learning_events(user_id, created_at DESC)"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sessions_user_time ON chat_sessions(user_id, updated_at DESC)"
+    )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_org_role ON users(organization_id, role)")
     _ensure_column(cur, "users", "password_hash", "TEXT")
     _ensure_column(cur, "users", "email", "TEXT")
@@ -192,8 +199,12 @@ def init_db():
     _ensure_column(cur, "flashcard_reviews", "card_front", "TEXT")
     _ensure_column(cur, "flashcard_reviews", "card_back", "TEXT")
     _ensure_column(cur, "flashcard_reviews", "total_reviews", "INTEGER DEFAULT 0")
-    cur.execute("""CREATE TABLE IF NOT EXISTS artifacts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, artifact_type TEXT NOT NULL, title TEXT NOT NULL, topic TEXT, source_session_id TEXT, payload_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)""")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_user_type ON artifacts(user_id, artifact_type, updated_at DESC)")
+    cur.execute(
+        """CREATE TABLE IF NOT EXISTS artifacts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, artifact_type TEXT NOT NULL, title TEXT NOT NULL, topic TEXT, source_session_id TEXT, payload_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)"""
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_artifacts_user_type ON artifacts(user_id, artifact_type, updated_at DESC)"
+    )
     cur.executescript("""
         CREATE TABLE IF NOT EXISTS learning_goals (
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
@@ -293,12 +304,21 @@ def ensure_default_organization() -> int:
     return org_id
 
 
-def create_user(name: str, class_: str, language: str, weak_subject: str, role: str = "student", organization_id: int | None = None) -> int:
+def create_user(
+    name: str,
+    class_: str,
+    language: str,
+    weak_subject: str,
+    role: str = "student",
+    organization_id: int | None = None,
+) -> int:
     conn = get_connection()
     cur = conn.cursor()
     timestamp = now_iso()
     org_id = organization_id or ensure_default_organization()
-    duplicate = cur.execute("SELECT id FROM users WHERE LOWER(name)=LOWER(?) AND COALESCE(is_active,1)=1", (name.strip(),)).fetchone()
+    duplicate = cur.execute(
+        "SELECT id FROM users WHERE LOWER(name)=LOWER(?) AND COALESCE(is_active,1)=1", (name.strip(),)
+    ).fetchone()
     if duplicate:
         conn.close()
         raise ValueError("An active account with this name already exists")
@@ -353,7 +373,9 @@ def touch_user_activity(user_id: int | None):
     conn = get_connection()
     cur = conn.cursor()
     timestamp = now_iso()
-    cur.execute("UPDATE users SET last_active_at = ?, updated_at = ? WHERE id = ?", (timestamp, timestamp, user_id))
+    cur.execute(
+        "UPDATE users SET last_active_at = ?, updated_at = ? WHERE id = ?", (timestamp, timestamp, user_id)
+    )
     conn.commit()
     conn.close()
 
@@ -405,6 +427,7 @@ def save_chat_session(session_id: str, messages: list[dict], profile: dict):
             messages_json = excluded.messages_json,
             profile_json = excluded.profile_json,
             updated_at = excluded.updated_at
+        WHERE chat_sessions.user_id IS excluded.user_id
         """,
         (
             session_id,
@@ -467,7 +490,9 @@ def get_chat_history(session_id: str) -> dict | None:
     }
 
 
-def log_event(event_type: str, user_id: int | None = None, session_id: str | None = None, metadata: dict | None = None):
+def log_event(
+    event_type: str, user_id: int | None = None, session_id: str | None = None, metadata: dict | None = None
+):
     conn = get_connection()
     cur = conn.cursor()
     org_id = None
@@ -485,7 +510,7 @@ def log_event(event_type: str, user_id: int | None = None, session_id: str | Non
     conn.close()
 
 
-def create_auth_token(user_id: int, token_type: str = "session", expires_in_hours: int = 24) -> dict:
+def create_auth_token(user_id: int, token_type: str = "session", expires_in_hours: int = 24) -> dict:  # noqa: S107 - authentication scheme label, not a credential
     conn = get_connection()
     cur = conn.cursor()
     user = cur.execute("SELECT organization_id, role FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -560,8 +585,8 @@ def _calculate_next_streak(cur: sqlite3.Cursor, user_id: int) -> int:
     return 1
 
 
-def update_progress(user_id: int, topic: str, score: int, total: int = 5) -> int:
-    conn = get_connection()
+def record_progress(conn, user_id: int, topic: str, score: int, total: int = 5) -> int:
+    """Record progress inside the caller's transaction; never commit independently."""
     cur = conn.cursor()
     current_streak = _calculate_next_streak(cur, user_id)
     timestamp = now_iso()
@@ -569,10 +594,20 @@ def update_progress(user_id: int, topic: str, score: int, total: int = 5) -> int
         "INSERT INTO progress (user_id, topic, score, total, streak, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
         (user_id, topic, score, total, current_streak, timestamp),
     )
-    cur.execute("UPDATE users SET last_active_at = ?, updated_at = ? WHERE id = ?", (timestamp, timestamp, user_id))
-    conn.commit()
-    conn.close()
+    cur.execute(
+        "UPDATE users SET last_active_at = ?, updated_at = ? WHERE id = ?", (timestamp, timestamp, user_id)
+    )
     return current_streak
+
+
+def update_progress(user_id: int, topic: str, score: int, total: int = 5) -> int:
+    conn = get_connection()
+    try:
+        streak = record_progress(conn, user_id, topic, score, total)
+        conn.commit()
+        return streak
+    finally:
+        conn.close()
 
 
 def get_user_progress(user_id: int) -> list:
@@ -590,7 +625,9 @@ def get_user_progress(user_id: int) -> list:
 def get_streak(user_id: int) -> int:
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT streak, timestamp FROM progress WHERE user_id = ? ORDER BY timestamp DESC LIMIT 1", (user_id,))
+    cur.execute(
+        "SELECT streak, timestamp FROM progress WHERE user_id = ? ORDER BY timestamp DESC LIMIT 1", (user_id,)
+    )
     row = cur.fetchone()
     conn.close()
     if not row:
@@ -642,35 +679,45 @@ def get_dashboard_metrics(organization_id: int | None = None) -> dict:
         params = (organization_id,)
 
     totals = {
-        "total_users": cur.execute(f"SELECT COUNT(*) FROM users{user_where}", params).fetchone()[0],
+        "total_users": cur.execute(f"SELECT COUNT(*) FROM users{user_where}", params).fetchone()[0],  # noqa: S608 - fixed SQL fragments/identifiers; values are bound
         "active_users_7d": cur.execute(
-            f"SELECT COUNT(*) FROM users{user_where}{' AND' if user_where else ' WHERE'} COALESCE(last_active_at, created_at) >= ?",
-            params + (last_7_days,),
+            f"SELECT COUNT(*) FROM users{user_where}{' AND' if user_where else ' WHERE'} COALESCE(last_active_at, created_at) >= ?",  # noqa: S608 - fixed SQL fragments/identifiers; values are bound
+            (*params, last_7_days),
         ).fetchone()[0],
-        "total_quiz_attempts": cur.execute(f"SELECT COUNT(*) FROM progress{progress_where}", params).fetchone()[0],
-        "total_chat_sessions": cur.execute(f"SELECT COUNT(*) FROM chat_sessions{session_where}", params).fetchone()[0],
-        "total_events": cur.execute(f"SELECT COUNT(*) FROM learning_events{event_where}", params).fetchone()[0],
+        "total_quiz_attempts": cur.execute(
+            f"SELECT COUNT(*) FROM progress{progress_where}",  # noqa: S608 - fixed SQL fragments; values bound
+            params,
+        ).fetchone()[0],
+        "total_chat_sessions": cur.execute(
+            f"SELECT COUNT(*) FROM chat_sessions{session_where}",  # noqa: S608 - fixed SQL fragments; values bound
+            params,
+        ).fetchone()[0],
+        "total_events": cur.execute(f"SELECT COUNT(*) FROM learning_events{event_where}", params).fetchone()[  # noqa: S608 - fixed SQL fragments/identifiers; values are bound
+            0
+        ],
     }
     avg_score = cur.execute(
-        f"SELECT AVG(CAST(score AS FLOAT) / NULLIF(total, 0)) FROM progress{progress_where}",
+        f"SELECT AVG(CAST(score AS FLOAT) / NULLIF(total, 0)) FROM progress{progress_where}",  # noqa: S608 - fixed SQL fragments/identifiers; values are bound
         params,
     ).fetchone()[0]
     role_rows = cur.execute(
-        f"SELECT role, COUNT(*) as count FROM users{user_where} GROUP BY role",
+        f"SELECT role, COUNT(*) as count FROM users{user_where} GROUP BY role",  # noqa: S608 - fixed SQL fragments/identifiers; values are bound
         params,
     ).fetchall()
     language_rows = cur.execute(
-        f"SELECT language, COUNT(*) as count FROM users{user_where} GROUP BY language ORDER BY count DESC",
+        f"SELECT language, COUNT(*) as count FROM users{user_where} GROUP BY language ORDER BY count DESC",  # noqa: S608 - fixed SQL fragments/identifiers; values are bound
         params,
     ).fetchall()
     event_rows = cur.execute(
-        f"SELECT event_type, COUNT(*) as count FROM learning_events{event_where} GROUP BY event_type ORDER BY count DESC",
+        f"SELECT event_type, COUNT(*) as count FROM learning_events{event_where} GROUP BY event_type ORDER BY count DESC",  # noqa: S608 - fixed SQL fragments/identifiers; values are bound
         params,
     ).fetchall()
     totals["average_quiz_score_pct"] = round((avg_score or 0) * 100, 1)
     totals["roles"] = {row["role"]: row["count"] for row in role_rows}
-    totals["languages"] = [{ "language": row["language"], "count": row["count"] } for row in language_rows]
-    totals["top_events"] = [{ "event_type": row["event_type"], "count": row["count"] } for row in event_rows[:8]]
+    totals["languages"] = [{"language": row["language"], "count": row["count"]} for row in language_rows]
+    totals["top_events"] = [
+        {"event_type": row["event_type"], "count": row["count"]} for row in event_rows[:8]
+    ]
     conn.close()
     return totals
 
@@ -681,7 +728,9 @@ def get_student_report(user_id: int) -> dict | None:
         return None
     history = get_user_progress(user_id)
     streak = get_streak(user_id)
-    avg_score = round(sum((row["score"] / row["total"]) * 100 for row in history) / len(history), 1) if history else 0
+    avg_score = (
+        round(sum((row["score"] / row["total"]) * 100 for row in history) / len(history), 1) if history else 0
+    )
     weak_topics = sorted(history, key=lambda row: (row["score"] / row["total"]))[:3]
     return {
         "student": user,
@@ -808,15 +857,17 @@ def get_leaderboard(org_id: int) -> list[dict]:
             "SELECT COUNT(*) as cnt, AVG(CAST(score AS FLOAT)/NULLIF(total,0)*100) as avg_pct FROM progress WHERE user_id = ?",
             (uid,),
         ).fetchone()
-        results.append({
-            "user_id": uid,
-            "name": s["name"],
-            "class_": s["class"],
-            "xp": total_xp,
-            "streak": best_streak,
-            "quiz_count": stats_row["cnt"] or 0,
-            "avg_pct": round(stats_row["avg_pct"] or 0, 1),
-        })
+        results.append(
+            {
+                "user_id": uid,
+                "name": s["name"],
+                "class_": s["class"],
+                "xp": total_xp,
+                "streak": best_streak,
+                "quiz_count": stats_row["cnt"] or 0,
+                "avg_pct": round(stats_row["avg_pct"] or 0, 1),
+            }
+        )
     conn.close()
     results.sort(key=lambda x: x["xp"], reverse=True)
     return results
@@ -827,7 +878,7 @@ def get_children(parent_id: int) -> list[dict]:
     conn = get_connection()
     cur = conn.cursor()
     rows = cur.execute(
-        "SELECT * FROM users WHERE parent_id = ? AND (is_active IS NULL OR is_active = 1)",
+        "SELECT u.* FROM users u WHERE u.parent_id = ? AND u.organization_id=(SELECT p.organization_id FROM users p WHERE p.id=u.parent_id) AND COALESCE(u.is_active,1)=1",
         (parent_id,),
     ).fetchall()
     conn.close()
@@ -910,8 +961,8 @@ def record_safety_event(
     try:
         cur = conn.execute(
             """INSERT INTO safety_events
-               (user_id, organization_id, session_id, severity, categories, source, blocked, excerpt, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               (user_id, organization_id, session_id, severity, categories, source, blocked, excerpt, created_at, category)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (
                 user_id,
                 organization_id,
@@ -922,6 +973,7 @@ def record_safety_event(
                 1 if blocked else 0,
                 excerpt,
                 now_iso(),
+                (categories or ["unknown"])[0],
             ),
         )
         conn.commit()
@@ -953,7 +1005,9 @@ def list_safety_events(
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM safety_events WHERE " + " AND ".join(clauses) + " ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM safety_events WHERE "  # noqa: S608 - fixed SQL fragments/identifiers; values are bound
+            + " AND ".join(clauses)
+            + " ORDER BY created_at DESC LIMIT ?",
             tuple(params),
         ).fetchall()
     finally:

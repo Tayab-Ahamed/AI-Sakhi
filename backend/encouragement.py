@@ -40,16 +40,16 @@ MID_SESSION = [
 def get_encouragement(score: int, total: int = 5) -> str:
     pct = score / total if total > 0 else 0
     if pct == 1.0:
-        return random.choice(ENCOURAGEMENT_BANK["perfect"])
+        return random.choice(ENCOURAGEMENT_BANK["perfect"])  # noqa: S311 - encouragement selection, not security randomness
     elif pct >= 0.8:
-        return random.choice(ENCOURAGEMENT_BANK["great"])
+        return random.choice(ENCOURAGEMENT_BANK["great"])  # noqa: S311 - encouragement selection, not security randomness
     elif pct >= 0.6:
-        return random.choice(ENCOURAGEMENT_BANK["good"])
+        return random.choice(ENCOURAGEMENT_BANK["good"])  # noqa: S311 - encouragement selection, not security randomness
     elif pct >= 0.4:
-        return random.choice(ENCOURAGEMENT_BANK["needs_practice"])
+        return random.choice(ENCOURAGEMENT_BANK["needs_practice"])  # noqa: S311 - encouragement selection, not security randomness
     else:
-        return random.choice(ENCOURAGEMENT_BANK["keep_trying"])
+        return random.choice(ENCOURAGEMENT_BANK["keep_trying"])  # noqa: S311 - encouragement selection, not security randomness
 
 
 def get_mid_session_encouragement() -> str:
-    return random.choice(MID_SESSION)
+    return random.choice(MID_SESSION)  # noqa: S311 - encouragement selection, not security randomness

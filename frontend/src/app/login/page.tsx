@@ -22,7 +22,7 @@ function LoginForm() {
   const [selectedRole, setSelectedRole] = useState(rawRole in ROLE_CONFIG ? rawRole : "student");
   const cfg = ROLE_CONFIG[selectedRole] || ROLE_CONFIG.student;
 
-  const { setUser } = useUser();
+  const { setUser, isReady } = useUser();
   const [form, setForm] = useState({ name: "", password: "" });
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -30,7 +30,7 @@ function LoginForm() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.password) return;
+    if (!isReady || loading || !form.name.trim() || !form.password) return;
     setLoading(true);
     setError("");
     try {
@@ -127,6 +127,8 @@ function LoginForm() {
                   <button
                     key={roleKey}
                     type="button"
+                    disabled={!isReady || loading}
+                    aria-pressed={isSelected}
                     onClick={() => {
                       setSelectedRole(roleKey);
                       setError("");
@@ -148,6 +150,7 @@ function LoginForm() {
           {/* Error notice */}
           {error && (
             <motion.div
+              role="alert"
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
               className="mb-5 p-3 rounded-lg text-xs"
@@ -172,6 +175,7 @@ function LoginForm() {
               </label>
               <input
                 type="text"
+                disabled={!isReady || loading}
                 aria-label="Your name"
                 placeholder="Enter your name"
                 value={form.name}
@@ -204,6 +208,7 @@ function LoginForm() {
               <div className="relative">
                 <input
                   type={showPw ? "text" : "password"}
+                  disabled={!isReady || loading}
                   aria-label="Password"
                   placeholder="Enter your password"
                   value={form.password}
@@ -225,6 +230,7 @@ function LoginForm() {
                 />
                 <button
                   type="button"
+                  disabled={!isReady || loading}
                   onClick={() => setShowPw((s) => !s)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer p-1"
                   style={{ color: "#62666d" }}
@@ -237,7 +243,7 @@ function LoginForm() {
 
             <button
               type="submit"
-              disabled={loading || !form.name.trim() || !form.password}
+              disabled={!isReady || loading || !form.name.trim() || !form.password}
               className="auth-submit mt-2 flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-medium transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
                 background: "#5e6ad2",

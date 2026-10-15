@@ -26,7 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from backend.evaluation import evaluate_suite  # noqa: E402
+from backend.evaluation import evaluate_suite
 
 
 def load_cases(path: Path) -> list[dict]:

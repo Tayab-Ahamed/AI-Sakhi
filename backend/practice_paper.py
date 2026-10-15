@@ -2,6 +2,7 @@
 Practice Paper Generator — AI Sakhi
 Generates structured exam papers with sections, marks, and model answers.
 """
+
 from __future__ import annotations
 
 import json
@@ -102,6 +103,6 @@ Return ONLY the JSON object, no markdown, no explanation."""
         paper = json.loads(raw)
         return {"success": True, "paper": paper}
     except json.JSONDecodeError as e:
-        return {"success": False, "error": f"JSON parse error: {str(e)}", "raw": raw[:500]}
+        return {"success": False, "error": f"JSON parse error: {e!s}", "raw": raw[:500]}
     except Exception as e:
         return {"success": False, "error": str(e)}

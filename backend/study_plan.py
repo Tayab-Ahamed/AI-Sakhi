@@ -1,13 +1,14 @@
 """
 Personalized 20-minute study plan generator for AI Sakhi.
 """
+
 from __future__ import annotations
 
 import json
 import re
 
-from backend.llm import complete
 from backend.language import is_text_compatible_with_language, language_instruction, normalize_language
+from backend.llm import complete
 
 PLAN_SYSTEM = (
     "You are a study plan creator for Indian school students. "
@@ -64,6 +65,7 @@ def generate_study_plan(topic: str, subject: str, class_: str = "8", language: s
         language=selected_language,
         language_instruction=language_instruction(selected_language),
     )
+
     def _call(messages: list[dict]) -> dict:
         result = complete(
             messages,
@@ -99,14 +101,13 @@ def generate_study_plan(topic: str, subject: str, class_: str = "8", language: s
                 ]
             )
         if not is_text_compatible_with_language(" ".join(visible_parts), selected_language):
-            retry_messages = messages + [
+            retry_messages = [
+                *messages,
                 {
                     "role": "user",
-                    "content": (
-                        f"The study plan was not fully in {selected_language}. "
-                        f"Regenerate it fully in proper {selected_language} only, including the correct script."
-                    ),
-                }
+                    "content": f"The study plan was not fully in {selected_language}. "
+                    f"Regenerate it fully in proper {selected_language} only, including the correct script.",
+                },
             ]
             plan = _call(retry_messages)
         return {"success": True, "plan": plan}

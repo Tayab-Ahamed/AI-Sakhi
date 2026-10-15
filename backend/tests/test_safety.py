@@ -12,7 +12,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from backend import safety  # noqa: E402
+from backend import safety
 
 
 class TestSeverityOrdering(unittest.TestCase):

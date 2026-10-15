@@ -9,20 +9,7 @@ import html2canvas from "html2canvas";
 import Sidebar from "@/components/Sidebar";
 import { api } from "@/lib/api";
 import { useUser } from "@/lib/user-context";
-import { Star, Trophy, Target, BookOpen, Zap, TrendingUp, Calendar, MessageCircle, Download, ShieldCheck, Users, Clock, Lightbulb, Sparkles, ArrowRight } from "lucide-react";
-
-type DashboardMetrics = {
-  total_users: number;
-  active_users_7d: number;
-  total_quiz_attempts: number;
-  total_chat_sessions: number;
-  total_events: number;
-  average_quiz_score_pct: number;
-  roles: Record<string, number>;
-  languages: Array<{ language: string; count: number }>;
-  top_events: Array<{ event_type: string; count: number }>;
-  users: Array<Record<string, unknown>>;
-};
+import { Star, Trophy, Target, BookOpen, Zap, TrendingUp, Calendar, MessageCircle, Download, Clock, Lightbulb, Sparkles, ArrowRight } from "lucide-react";
 
 type StudentReport = {
   weak_topics: string[];
@@ -741,7 +728,6 @@ export default function DashboardPage() {
     if (user.role === "admin")   { router.replace("/admin");   return; }
   }, [isReady, user, router]);
   const [progress, setProgress] = useState<{ history: HistoryItem[]; streak: number } | null>(null);
-  const [dashboard, setDashboard] = useState<DashboardMetrics | null>(null);
   const [report, setReport] = useState<StudentReport | null>(null);
   const [artifacts, setArtifacts] = useState<SavedArtifact[]>(() => {
     if (typeof window !== "undefined") {
@@ -762,21 +748,24 @@ export default function DashboardPage() {
   const [dueFlashcards, setDueFlashcards] = useState(0);
   const [pendingAssignments, setPendingAssignments] = useState<Array<{ id: number; title: string; topic: string; subject: string; due_date: string | null; difficulty: string }>>([]);
   const [loading, setLoading] = useState(Boolean(user?.user_id));
+  const [loadError, setLoadError] = useState("");
+  const [reload, setReload] = useState(0);
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!user?.user_id || user.role !== "student") return;
+    let active = true;
     const load = async () => {
       try {
-        const [progressData, dashboardData, reportData] = await Promise.all([
+        const [progressData, reportData] = await Promise.all([
           api.getProgress(user.user_id) as Promise<{ history: HistoryItem[]; streak: number }>,
-          api.getDashboard(user.organization_id) as Promise<DashboardMetrics>,
           api.getUserReport(user.user_id) as Promise<StudentReport>,
         ]);
+        if (!active) return;
         setProgress(progressData);
-        setDashboard(dashboardData);
         setReport(reportData);
         const artifactData = await api.listArtifacts(user.user_id) as { artifacts?: SavedArtifact[] };
+        if (!active) return;
         const fetchedArtifacts = artifactData.artifacts || [];
         setArtifacts(fetchedArtifacts);
         if (typeof window !== "undefined") {
@@ -788,6 +777,7 @@ export default function DashboardPage() {
           (api.getDueFlashcards(user.user_id) as Promise<{ stats?: { due_now: number } }>).catch(() => null),
           (api.getSmartSprint(user.user_id, 25) as unknown as Promise<SmartSprint>).catch(() => null),
         ]);
+        if (!active) return;
         if (recData) {
           setRecommendations(recData.next_topics || []);
           setRetryTopic(recData.retry_topic || null);
@@ -800,18 +790,22 @@ export default function DashboardPage() {
         }
         // Phase 10: load pending student assignments
         const asgData = await (api.getStudentAssignments(user.user_id, user.organization_id) as unknown as Promise<Array<{ id: number; title: string; topic: string; subject: string; due_date: string | null; difficulty: string; my_submission?: { completed: boolean } }>>).catch(() => null);
+        if (!active) return;
         if (asgData) {
           const pending = (Array.isArray(asgData) ? asgData : []).filter(
             (a: { my_submission?: { completed?: boolean } }) => !a.my_submission?.completed
           );
           setPendingAssignments(pending);
         }
+      } catch {
+        if (active) setLoadError("Your learning dashboard could not load. Check your connection and retry.");
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
     load();
-  }, [sessionId, user?.organization_id, user?.user_id, user?.role]);
+    return () => { active = false; };
+  }, [sessionId, user?.organization_id, user?.user_id, user?.role, reload]);
 
   const streak = progress?.streak || 0;
   const history = progress?.history || [];
@@ -869,8 +863,7 @@ export default function DashboardPage() {
     return null;
   }
 
-  const isAdminView = (user?.role as string) === "admin";
-  const isSupportView = (user?.role as string) === "parent" || (user?.role as string) === "teacher";
+  if (loadError) return <div className="app-shell"><Sidebar /><main className="main-content p-6"><h1>My learning dashboard</h1><p role="alert">{loadError}</p><button type="button" className="btn btn-primary" onClick={() => { setLoadError(""); setLoading(true); setReload((value) => value + 1); }}>Retry dashboard</button></main></div>;
 
   return (
     <div className="app-shell">
@@ -1048,56 +1041,6 @@ export default function DashboardPage() {
                 </Link>
               </div>
             </motion.div>
-          )}
-
-          {/* Support view */}
-          {(isSupportView || isAdminView) && (
-            <div className="card" style={{ padding: 22, marginBottom: 16 }}>
-              <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
-                <Users size={16} style={{ color: "var(--emerald)" }} /> Parent / Teacher Insights
-              </h2>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-                <StatCard icon={BookOpen} label="Weak Topics" value={report?.weak_topics?.length || 0} iconBg="#eff6ff" iconColor="#2563eb" />
-                <StatCard icon={TrendingUp} label="Org Users" value={dashboard?.total_users || 0} iconBg="#f0fdf4" iconColor="#059669" />
-                <StatCard icon={ShieldCheck} label="Events Logged" value={dashboard?.total_events || 0} iconBg="#fef2f2" iconColor="#dc2626" />
-              </div>
-              <div style={{ marginTop: 16, fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7 }}>
-                <strong>Weak topics:</strong> {(report?.weak_topics || []).join(", ") || "No quiz data yet"}.
-              </div>
-            </div>
-          )}
-
-          {/* Admin view */}
-          {isAdminView && (
-            <div className="card" style={{ padding: 22, marginBottom: 16 }}>
-              <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
-                <ShieldCheck size={16} style={{ color: "#ca8a04" }} /> Admin Analytics
-              </h2>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
-                <StatCard icon={Users} label="Users" value={dashboard?.total_users || 0} iconBg="#eff6ff" iconColor="#2563eb" />
-                <StatCard icon={MessageCircle} label="Chat Sessions" value={dashboard?.total_chat_sessions || 0} iconBg="#fdf4ff" iconColor="#9333ea" />
-                <StatCard icon={Zap} label="Quiz Attempts" value={dashboard?.total_quiz_attempts || 0} iconBg="#fefce8" iconColor="#ca8a04" />
-                <StatCard icon={TrendingUp} label="Active 7d" value={dashboard?.active_users_7d || 0} iconBg="#f0fdf4" iconColor="#059669" />
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <div style={{ padding: 14, background: "#fafafa", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)" }}>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>Role Distribution</div>
-                  <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.8 }}>
-                    {Object.entries(dashboard?.roles || {}).map(([role, count]) => (
-                      <div key={role}>{role}: {String(count)}</div>
-                    ))}
-                  </div>
-                </div>
-                <div style={{ padding: 14, background: "#fafafa", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)" }}>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>Top Languages</div>
-                  <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.8 }}>
-                    {(dashboard?.languages || []).slice(0, 5).map((item) => (
-                      <div key={item.language}>{item.language}: {item.count}</div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
           )}
 
           {/* Badges */}

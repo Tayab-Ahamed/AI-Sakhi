@@ -3,6 +3,7 @@
 Exposes counters that matter for an AI product: request volume and latency by
 route class, LLM tokens/latency/failures, retrieval hit rate, and safety events.
 """
+
 from __future__ import annotations
 
 import threading
@@ -90,7 +91,7 @@ def render_prometheus() -> str:
 
     for name, values in sorted(histograms.items()):
         base = name.split("{")[0]
-        suffix = name[len(base):]
+        suffix = name[len(base) :]
         lines.append(f"{base}_count{suffix} {len(values)}")
         lines.append(f"{base}_sum{suffix} {round(sum(values), 2)}")
         for pct in (50, 95, 99):

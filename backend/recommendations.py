@@ -5,6 +5,7 @@ Cross-references the user's quiz history with curriculum.json to suggest:
   1. next_topics  — 3 unattempted topics in curriculum order
   2. retry_topic  — the single weakest previously attempted topic
 """
+
 from __future__ import annotations
 
 import json
@@ -14,9 +15,8 @@ import sqlite3
 from backend.config import DB_PATH
 
 # Load curriculum once at import time
-_CURRICULUM_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "curriculum", "curriculum.json"
-)
+_CURRICULUM_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "curriculum", "curriculum.json")
+
 
 def _load_curriculum() -> dict:
     try:
@@ -24,6 +24,7 @@ def _load_curriculum() -> dict:
             return json.load(f)
     except Exception:
         return {"topics": {}, "subjects": []}
+
 
 _CURRICULUM = _load_curriculum()
 
@@ -81,7 +82,7 @@ def get_recommendations(user_id: int) -> dict:
     progress = _get_progress(user_id)
 
     # Build sets of attempted topics (case-insensitive)
-    attempted: dict[str, float] = {}   # topic_lower -> best_pct
+    attempted: dict[str, float] = {}  # topic_lower -> best_pct
     for row in progress:
         total = row.get("total") or 0
         if total > 0:
@@ -110,12 +111,14 @@ def get_recommendations(user_id: int) -> dict:
         for t in class_topics:
             if t.strip().lower() not in attempted:
                 reason = f"Next topic in Class {class_} {label}"
-                next_topics.append({
-                    "topic": t,
-                    "subject": label,
-                    "subject_id": sub_id,
-                    "reason": reason,
-                })
+                next_topics.append(
+                    {
+                        "topic": t,
+                        "subject": label,
+                        "subject_id": sub_id,
+                        "reason": reason,
+                    }
+                )
             if len(next_topics) >= 3:
                 break
         if len(next_topics) >= 3:
@@ -136,7 +139,7 @@ def get_recommendations(user_id: int) -> dict:
         retry_subject = "General"
         retry_subject_id = ""
         for sub_id, class_map in topics_data.items():
-            for cls, tlist in class_map.items():
+            for _cls, tlist in class_map.items():
                 if any(t.strip().lower() == weakest_key for t in tlist):
                     retry_subject = _subject_label(sub_id)
                     retry_subject_id = sub_id

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import { DownloadSimple, UploadSimple } from "@phosphor-icons/react";
 import { LocalStore } from "@/lib/store/local-store";
 import type { ExportBundle } from "@/lib/store/types";
@@ -45,7 +46,7 @@ export default function MyDataCard({ userId }: { userId: number }) {
     <div className="card" style={{ padding: 20, marginTop: 16 }}>
       <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: "var(--text-primary)" }}>My Data</h3>
       <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 12 }}>
-        Your chats are kept on this device. Download a backup you own, or restore one.
+        Download or restore your on-device copy. Account data and synced conversations may also be stored on the server.
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" className="landing-button landing-button-primary" onClick={() => void exportData()}>
@@ -66,6 +67,7 @@ export default function MyDataCard({ userId }: { userId: number }) {
           }}
         />
       </div>
+      <p className="mt-3 text-sm"><Link href="/privacy">Manage server data and account sessions</Link></p>
       {status && <p role="status" style={{ fontSize: 13, marginTop: 10, color: "var(--text-secondary)" }}>{status}</p>}
     </div>
   );

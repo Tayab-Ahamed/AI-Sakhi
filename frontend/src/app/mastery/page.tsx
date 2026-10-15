@@ -75,7 +75,7 @@ export default function MasteryPage() {
   return (
     <div className="app-shell">
       <Sidebar />
-      <div className="main-content" style={{ overflowY: "auto", padding: "32px 28px" }}>
+      <main className="main-content" style={{ overflowY: "auto", padding: "32px 28px" }}>
         <div style={{ maxWidth: 700, margin: "0 auto" }}>
           <div style={{ marginBottom: 24 }}>
             <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.5px", display: "flex", alignItems: "center", gap: 10, margin: 0 }}>
@@ -252,7 +252,7 @@ export default function MasteryPage() {
             </div>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

@@ -3,12 +3,11 @@ AI Sakhi — Study Notes Generator
 Generates structured markdown study notes for a given topic using Groq LLM.
 Includes language validation retry loop matching quiz.py pattern.
 """
+
 from __future__ import annotations
 
-import os
-
-from backend.llm import complete
 from backend.language import is_text_compatible_with_language, normalize_language
+from backend.llm import complete
 
 NOTE_SYSTEM_PROMPT = """You are Sakhi, a patient and knowledgeable tutor for Indian students (KG to Class 12).
 Generate clear, structured study notes in the following markdown format:
@@ -67,16 +66,17 @@ def generate_study_notes(
     notes = result.text or ""
 
     # Language validation retry (same pattern as quiz.py)
-    if selected_language.lower() != "english" and not is_text_compatible_with_language(notes, selected_language):
-        retry_messages = messages + [
+    if selected_language.lower() != "english" and not is_text_compatible_with_language(
+        notes, selected_language
+    ):
+        retry_messages = [
+            *messages,
             {"role": "assistant", "content": notes},
             {
                 "role": "user",
-                "content": (
-                    f"The notes were not in {selected_language}. "
-                    f"Please regenerate the full study notes entirely in proper {selected_language}, "
-                    f"using the correct script. Do not use English."
-                ),
+                "content": f"The notes were not in {selected_language}. "
+                f"Please regenerate the full study notes entirely in proper {selected_language}, "
+                f"using the correct script. Do not use English.",
             },
         ]
         retry_result = complete(
@@ -88,4 +88,3 @@ def generate_study_notes(
         notes = retry_result.text or notes
 
     return notes
-

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
+import LearnerApprovalRoster from "@/components/LearnerApprovalRoster";
+import { buildSubjectMastery } from "@/lib/parent-mastery";
 import { api } from "@/lib/api";
 import { useUser } from "@/lib/user-context";
 import { 
@@ -153,15 +155,7 @@ export default function ParentPage() {
   };
 
   // Prepare Subject Mastery Pie data
-  const subjectData = mastery.length > 0 ? mastery.map(m => ({
-    name: m.topic,
-    value: m.avg_pct
-  })) : [
-    { name: "Mathematics", value: 78 },
-    { name: "Science", value: 85 },
-    { name: "Social Studies", value: 64 },
-    { name: "English Language", value: 91 }
-  ];
+  const subjectData = buildSubjectMastery(mastery);
 
   const totalMasteryVal = subjectData.reduce((acc, s) => acc + s.value, 0);
   
@@ -185,7 +179,7 @@ export default function ParentPage() {
     return `${color} ${start.toFixed(1)}% ${end.toFixed(1)}%`;
   });
 
-  const conicGradientStyle = `conic-gradient(${gradientSlices.join(", ")})`;
+  const conicGradientStyle = gradientSlices.length ? `conic-gradient(${gradientSlices.join(", ")})` : "var(--bg-sidebar)";
 
   // Extract feedback notes from completed assignments
   const feedbackNotes = report?.assignments_completed.filter(a => a.feedback_note && a.feedback_note.trim().length > 0) || [];
@@ -193,11 +187,11 @@ export default function ParentPage() {
   return (
     <div className="app-shell">
       <Sidebar />
-      <main className="main-content" style={{ overflowY: "auto", padding: "28px 32px" }}>
-        <div style={{ maxWidth: 1040, margin: "0 auto" }}>
+      <main className="main-content parent-dashboard" style={{ overflowY: "auto", padding: "28px 32px" }}>
+        <div style={{ width: "100%", minWidth: 0, maxWidth: 1040, margin: "0 auto" }}>
           
           {/* Header */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
             <div>
               <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.5px", color: "var(--text-primary)", marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
                 Parent Dashboard 👨‍👩‍👧
@@ -225,6 +219,7 @@ export default function ParentPage() {
             )}
           </div>
 
+          <LearnerApprovalRoster key={`${user.user_id}:${user.organization_id}`} actorId={user.user_id} actorRole={user.role || ""} organizationId={user.organization_id} />
           {children.length === 0 ? (
             <div className="card" style={{ textAlign: "center", padding: "64px 24px", maxWidth: 600, margin: "40px auto" }}>
               <div style={{ fontSize: 56, marginBottom: 16 }}>👨‍👩‍👧</div>
@@ -241,9 +236,10 @@ export default function ParentPage() {
             </div>
           ) : report ? (
             <motion.div 
+              className="parent-learning-grid"
               initial={{ opacity: 0, y: 10 }} 
               animate={{ opacity: 1, y: 0 }}
-              style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}
+              style={{ display: "grid", gap: 24 }}
             >
               
               {/* Left Column (Weekly Digest + Subject Strength) */}
@@ -414,10 +410,11 @@ export default function ParentPage() {
                 {/* Subject Strength Doughnut representation */}
                 <div className="card" style={{ padding: 24 }}>
                   <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
-                    <Trophy size={17} style={{ color: "#f59e0b" }} /> Subject Mastery Strengths
+                    <Trophy size={17} style={{ color: "#f59e0b" }} /> Topic practice results
                   </h2>
+                  {subjectData.length === 0 && <p role="status">No assessment data yet. Results appear after recorded quiz attempts.</p>}
 
-                  <div style={{ display: "flex", alignItems: "center", gap: 28 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 28 }}>
                     
                     {/* Doughnut Chart representation */}
                     <div style={{ position: "relative", width: 150, height: 150, flexShrink: 0 }}>
@@ -444,7 +441,7 @@ export default function ParentPage() {
                         justifyContent: "center",
                         boxShadow: "0 2px 5px rgba(0,0,0,0.05)"
                       }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>Avg Mastery</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>Avg quiz score</span>
                         <span style={{ fontSize: 24, fontWeight: 800, color: "var(--text-primary)", marginTop: 2 }}>
                           {report.avg_quiz_pct != null ? `${Math.round(report.avg_quiz_pct)}%` : "N/A"}
                         </span>
@@ -499,7 +496,7 @@ export default function ParentPage() {
                   {feedbackNotes.length === 0 ? (
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, padding: 32, textAlign: "center", background: "var(--bg-sidebar)", borderRadius: 14, border: "1.5px dashed var(--border)" }}>
                       <MessageSquare size={28} style={{ color: "var(--text-muted)", marginBottom: 10 }} />
-                      <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>No feedback notes yet</h4>
+                      <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>No feedback notes yet</h3>
                       <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.4 }}>
                         When teachers review assignment submissions, their specialized notes and instructions will appear here automatically.
                       </p>

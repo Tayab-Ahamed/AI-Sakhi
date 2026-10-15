@@ -79,6 +79,15 @@ export class LocalStore implements DataStore {
     for (const a of bundle.artifacts) await this.saveArtifact({ ...a, userId: bundle.userId });
     return { chats: bundle.chats.length, artifacts: bundle.artifacts.length };
   }
+
+  async clearUser(userId: number) {
+    await this.db.transaction("rw", this.db.chats, this.db.artifacts, async () => {
+      await this.db.chats.where("userId").equals(userId).delete();
+      await this.db.artifacts.where("userId").equals(userId).delete();
+    });
+  }
+
+  close() { this.db.close(); }
 }
 
 export function getDeviceId(): string {

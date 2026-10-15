@@ -2,21 +2,23 @@
 Phase 17 — Unit Tests for Phase 8 backend modules.
 Tests the actual public API surface of each module.
 """
-import sys
+
 import os
+import sys
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 import pytest
-from backend.spaced_repetition import sm2_update, quality_label, initial_review_state
 
+from backend.spaced_repetition import initial_review_state, quality_label, sm2_update
 
 # ─────────────────────────────────────────────────────────────
 # SM-2 Algorithm Tests
 # sm2_update(ef, interval, reps, quality) -> (new_ef, new_interval, new_reps)
 # ─────────────────────────────────────────────────────────────
 
-class TestSm2Update:
 
+class TestSm2Update:
     def test_first_review_easy(self):
         """Quality=4 (Easy), first rep → interval stays 1, reps becomes 1."""
         new_ef, new_interval, new_reps = sm2_update(2.5, 1, 0, 4)
@@ -79,7 +81,6 @@ class TestSm2Update:
 
 
 class TestSm2Helpers:
-
     def test_quality_label_mapping(self):
         assert quality_label(1) == "Forgot"
         assert quality_label(2) == "Hard"
@@ -100,6 +101,7 @@ class TestSm2Helpers:
 # Adaptive Difficulty Tests (logic layer — no DB)
 # Tests the threshold logic directly using computed percentages
 # ─────────────────────────────────────────────────────────────
+
 
 class TestAdaptiveThresholds:
     """
@@ -141,6 +143,7 @@ class TestAdaptiveThresholds:
 # Tests the prioritisation logic without DB calls
 # ─────────────────────────────────────────────────────────────
 
+
 class TestRecommendationLogic:
     """
     Test the scoring / ranking logic of the recommendation engine
@@ -150,7 +153,7 @@ class TestRecommendationLogic:
     def _rank_topics(
         self,
         all_topics: list[str],
-        attempted: dict[str, float],   # topic_lower -> best_pct
+        attempted: dict[str, float],  # topic_lower -> best_pct
         weak_subject: str = "",
     ) -> list[str]:
         """
@@ -164,7 +167,7 @@ class TestRecommendationLogic:
         for t in all_topics:
             key = t.lower()
             if key not in attempted:
-                score = 100.0   # unattempted → top priority
+                score = 100.0  # unattempted → top priority
             else:
                 pct = attempted[key]
                 score = 50.0 - pct  # low pct → higher score

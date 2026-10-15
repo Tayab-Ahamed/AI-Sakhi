@@ -103,13 +103,13 @@ export function useRequireAuth(allowedRoles?: SakhiRole[]) {
     if (!isReady) return;
 
     // Not logged in at all
-    if (!user || !auth?.token) {
+    if (!user || !auth) {
       router.replace("/onboard");
       return;
     }
 
     // Token expired
-    if (isTokenExpired(auth.token)) {
+    if (new Date(auth.expires_at).getTime() <= Date.now()) {
       router.replace("/onboard");
       return;
     }
@@ -119,7 +119,7 @@ export function useRequireAuth(allowedRoles?: SakhiRole[]) {
       const role = user.role as SakhiRole;
       if (!allowedRoles.includes(role)) {
         // Authenticated but wrong role — go to their own dashboard
-        router.replace("/chat");
+        router.replace(getRoleLandingPage(user.role));
         return;
       }
     }

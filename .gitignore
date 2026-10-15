@@ -49,6 +49,7 @@ frontend/coverage/
 
 # ── Testing ───────────────────────────────────────────────────────
 .pytest_cache/
+.artifacts/
 .coverage
 coverage.xml
 htmlcov/
