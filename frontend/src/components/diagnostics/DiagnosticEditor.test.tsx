@@ -149,3 +149,71 @@ it("lists a new draft immediately and ignores a late stale empty list", async ()
   expect(screen.getByRole("button", { name: "Edit School check" })).toBeVisible();
   expect(screen.queryByText(/no assessments yet/i)).not.toBeInTheDocument();
 });
+
+it("replaces an unavailable saved selection and publishes without rebuilding a referenced concept", async () => {
+  const bank = [2, 3, 4, 5, 6, 7].map(id => ({ ...questions[0], id, question_text: `School question ${id}` }));
+  vi.mocked(api.getDiagnosticBlueprint).mockResolvedValue({ ...blueprint, preview: bank.filter(q => q.id !== 7),
+    preview_warnings: ["Question 1 is unavailable for this draft."],
+    definition: { ...blueprint.definition, concepts: [...blueprint.definition.concepts,
+      { id: "next", label: "Next idea", prerequisite_ids: ["base"], question_ids: [4, 5, 6] }] } });
+  vi.mocked(api.getDiagnosticCandidates).mockResolvedValue({ questions: bank, next_after_id: null });
+  render(<DiagnosticEditor identity={identity} />); await open();
+  const base = within(screen.getByRole("group", { name: "Concept: Foundations" }));
+  expect(await base.findByRole("checkbox", { name: /question 7:/i })).toBeDisabled();
+  fireEvent.click(base.getByRole("button", { name: "Remove selected question 1" }));
+  fireEvent.click(base.getByRole("checkbox", { name: /question 7:/i }));
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  await screen.findByText(/^draft saved\./i);
+  expect(vi.mocked(api.saveDiagnosticBlueprint).mock.lastCall?.[1].definition.concepts).toEqual([
+    { ...blueprint.definition.concepts[0], question_ids: [2, 3, 7] },
+    { id: "next", label: "Next idea", prerequisite_ids: ["base"], question_ids: [4, 5, 6] },
+  ]);
+  fireEvent.click(screen.getByRole("button", { name: "Publish assessment" }));
+  expect(await screen.findByText(/^version 1 published\./i)).toBeVisible();
+});
+
+it.each([401, 403])("hides private staff state and publication intents after a %i denial", async status => {
+  vi.mocked(api.publishDiagnosticBlueprint).mockRejectedValue(new ApiError("Staff access denied.", status));
+  const view = render(<DiagnosticEditor identity={identity} />); await open();
+  fireEvent.click(screen.getByRole("button", { name: "Preview saved draft" }));
+  await screen.findByRole("region", { name: "Staff preview" });
+  fireEvent.click(screen.getByRole("button", { name: "Publish assessment" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(/access.*sign in again/i);
+  expect(screen.getByRole("link", { name: "Sign in again" })).toHaveAttribute("href", "/login");
+  expect(screen.queryByRole("textbox", { name: "Assessment title" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: "Staff preview" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/reviewed answer/i)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  view.rerender(<DiagnosticEditor identity={{ ...identity }} />);
+  expect(screen.queryByRole("button")).not.toBeInTheDocument();
+});
+
+it.each([401, 403])("requires reauthentication after an initial %i denial", async status => {
+  vi.mocked(api.listDiagnosticBlueprints).mockRejectedValue(new ApiError("Staff access denied.", status));
+  render(<DiagnosticEditor identity={identity} />);
+  expect(await screen.findByRole("alert")).toHaveTextContent(/access.*sign in again/i);
+  expect(screen.getByRole("link", { name: "Sign in again" })).toBeVisible();
+  expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button")).not.toBeInTheDocument();
+});
+
+it("ignores a late publication response after initial loading definitively denies access", async () => {
+  let denyList!: (error: Error) => void;
+  let resolvePublication!: (value: DiagnosticVersion) => void;
+  vi.mocked(api.listDiagnosticBlueprints).mockReturnValue(new Promise((_, reject) => { denyList = reject; }));
+  vi.spyOn(api, "createDiagnosticBlueprint").mockResolvedValue(blueprint);
+  vi.mocked(api.publishDiagnosticBlueprint).mockReturnValue(new Promise(resolve => { resolvePublication = resolve; }));
+  render(<DiagnosticEditor identity={identity} />);
+  fireEvent.change(screen.getByRole("textbox", { name: "Assessment title" }), { target: { value: "School check" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Subject" }), { target: { value: "Math" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create draft" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Save draft" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Publish assessment" }));
+  await waitFor(() => expect(api.publishDiagnosticBlueprint).toHaveBeenCalledTimes(1));
+  await act(async () => denyList(new ApiError("Staff access denied.", 403)));
+  expect(screen.getByRole("link", { name: "Sign in again" })).toBeVisible();
+  await act(async () => resolvePublication(version));
+  expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  expect(screen.queryByText(/version 1 published/i)).not.toBeInTheDocument();
+});

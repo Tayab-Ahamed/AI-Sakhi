@@ -52,3 +52,11 @@ it("has a native HTML v-flag pattern that accepts hyphenated local IDs", () => {
   expect(pattern.test("INVALID")).toBe(false);
   expect(pattern.test("1base")).toBe(false);
 });
+
+it("removes an unavailable selection without changing concept metadata or prerequisites", () => {
+  const selected = { ...concept, prerequisite_ids: ["next"], question_ids: [1, 2, 99] };
+  const change = vi.fn();
+  render(<DiagnosticConceptEditor concept={selected} peers={[selected, peer]} candidates={candidates} disabled={false} onChange={change} />);
+  fireEvent.click(screen.getByRole("button", { name: "Remove selected question 99" }));
+  expect(change).toHaveBeenCalledWith({ ...selected, question_ids: [1, 2] });
+});

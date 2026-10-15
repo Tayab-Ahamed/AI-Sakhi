@@ -47,7 +47,10 @@ export function DiagnosticConceptEditor({ concept, peers, candidates, disabled, 
           onChange={() => toggleQuestion(question.id)} />
         <span>Question {question.id}: {question.question_text}{usedElsewhere.has(question.id) ? " (selected in another concept)" : ""}</span>
       </label>)}
-      {concept.question_ids.filter(id => !candidates.some(q => q.id === id)).map(id => <p key={id}>Selected question {id} is not available on this page; check the saved preview.</p>)}
+      {concept.question_ids.filter(id => !candidates.some(q => q.id === id)).map(id => <div key={id}>
+        <p>Selected question {id} is not available on this page; check the saved preview or remove it to choose a replacement.</p>
+        <button type="button" disabled={disabled} onClick={() => toggleQuestion(id)}>Remove selected question {id}</button>
+      </div>)}
     </fieldset>
   </fieldset>;
 }

@@ -36,11 +36,11 @@
 
 ## Execution State and Repository Map
 
-Plan approved October 15, 2026. User selected Native: sequential implementation here, with an independent final review. No unchecked step is an implementation claim. Detailed steps live here; `tasks/todo.md` remains the overall roadmap tracker.
+Plan approved October 15, 2026. User selected Native: sequential implementation here, with an independent final review. Completed steps reflect the task ledger and its explicit rulings, including inseparable uncommitted integration files. Detailed steps live here; `tasks/todo.md` remains the overall roadmap tracker.
 
-Implementation gates passed October 15: 247 backend tests, 138 frontend tests, lint/types/build/reference graders and ten real-browser cases. Independent final review remains the final execution gate; see `docs/verification-diagnostics.md` and the plan-scoped execution ledger for exact evidence and rulings.
+Implementation accepted October 15: 247 backend tests, 145 frontend tests, lint/types/build/reference graders and eleven real-browser cases. Original independent review found two Important recovery gaps, fixed in one observed RED→GREEN pass; two minors remain deferred. See `docs/verification-diagnostics.md` and the preserved plan-scoped ledger for exact evidence, rulings and integration/release limits. No second review was dispatched.
 
-Current schema ends at migration 9. Use migration 10 only if it remains the next version at execution time. Recheck the migration list before editing; never renumber an existing migration.
+Pre-implementation schema ended at migration 9. Migration 10 was confirmed next and added without renumbering existing migrations; fresh/rerun/partial-upgrade checks use temporary databases only.
 
 | File group | Responsibility |
 | --- | --- |
@@ -75,7 +75,7 @@ The shared fixture helper `published_blueprint(...)` returns `{blueprint, versio
 **Files:** Create `backend/question_rules.py`, `backend/tests/test_question_rules.py`; modify `backend/practice_service.py`.
 **Interfaces:** Consume the current `mcq_snapshot(row: dict) -> dict | None`; produce the same function in `question_rules`, re-exported by import in practice so existing callers remain compatible.
 
-- [ ] Write characterisation tests before moving the function:
+- [x] Write characterisation tests before moving the function:
 
 ```python
 def test_letter_key_keeps_precedence_over_option_text():
@@ -91,17 +91,17 @@ def test_duplicate_options_are_not_eligible():
     assert mcq_snapshot(row) is None
 ```
 
-- [ ] Run `python -m pytest backend/tests/test_question_rules.py -p no:cacheprovider --show-capture=no`; confirm the missing-module failure before the move.
-- [ ] Move the current function unchanged; add `from backend.question_rules import mcq_snapshot` to practice. Do not add diagnostic length rules to existing practice in this extraction.
-- [ ] Add malformed JSON, non-list options, 1/11 options, blank values, invalid keys and exact-option key cases.
-- [ ] Run the focused file and `backend/tests/test_reviewed_practice.py`; both must pass. Inspect the diff for behavior changes, then commit only these three files with `refactor: share reviewed MCQ interpretation`.
+- [x] Run `python -m pytest backend/tests/test_question_rules.py -p no:cacheprovider --show-capture=no`; confirm the missing-module failure before the move.
+- [x] Move the current function unchanged; add `from backend.question_rules import mcq_snapshot` to practice. Do not add diagnostic length rules to existing practice in this extraction.
+- [x] Add malformed JSON, non-list options, 1/11 options, blank values, invalid keys and exact-option key cases.
+- [x] Run the focused file and `backend/tests/test_reviewed_practice.py`; both must pass. Inspect the diff for behavior changes, then commit only these three files with `refactor: share reviewed MCQ interpretation`.
 
 ### Task 2: Implement deterministic graph and evidence rules
 
 **Files:** Create `backend/diagnostic_rules.py`, `backend/tests/test_diagnostic_rules.py`.
 **Interfaces:** Consume `question_rules.mcq_snapshot`; produce `validate_definition(definition, *, complete=False) -> dict`, `topological_ids(concepts) -> list[str]`, `diagnostic_snapshot(row) -> dict | None`, `score_definition(snapshot, answers) -> dict`, and `public_definition(snapshot) -> dict`.
 
-- [ ] Write an executable fixture inside the test module: a two-concept chain with IDs `base`, `next`; each has three questions, sequential IDs 1–6, options `['Yes', 'No']`, correct index 0 and a school explanation. `next.prerequisite_ids` is `['base']`.
+- [x] Write an executable fixture inside the test module: a two-concept chain with IDs `base`, `next`; each has three questions, sequential IDs 1–6, options `['Yes', 'No']`, correct index 0 and a school explanation. `next.prerequisite_ids` is `['base']`.
 
 ```python
 import pytest
@@ -117,7 +117,7 @@ def snapshot():
                 for i in range(1, 4)]})
     return {"title": "School check", "class_level": "8", "subject": "Math", "concepts": concepts}
 ```
-- [ ] Write the first failing scoring tests:
+- [x] Write the first failing scoring tests:
 
 ```python
 def test_skips_are_insufficient_evidence_not_incorrect(snapshot):
@@ -137,20 +137,20 @@ def test_review_of_prerequisite_is_explained(snapshot):
     assert result["next_action"]["concept_id"] == "base"
 ```
 
-- [ ] Run `python -m pytest backend/tests/test_diagnostic_rules.py -p no:cacheprovider --show-capture=no`; observe failure before implementation.
-- [ ] Use a stable Kahn topological sort: validate local IDs/edges, repeatedly select the earliest saved concept with zero remaining prerequisites, remove its outgoing edges, and reject if fewer than all concepts are emitted. Do not infer edges or reorder unrelated concepts alphabetically.
-- [ ] Validate metadata bounds, at most six concepts, duplicate concepts/edges/question IDs, unknown/self references and cycles. Drafts allow zero concepts and 0–3 questions per concept; publication requires 1–6 concepts and exactly three each.
-- [ ] Implement strict answer-map validation using exact question IDs and `type(value) is int` or null; reject bool/string/float, missing/extra keys and out-of-range indices. Classify each concept using the exact three-row spec table; compute ancestor reasons and first non-strength topological next action. All-strength gets spaced practice, never mastery.
-- [ ] Add tests for dangling edges after rename/removal, stable ties, indirect cycles, Unicode/blank labels, length bounds, every evidence state, all-correct, all-wrong, mixed skips and key-free public projection. Diagnostic snapshot length checks precede large JSON parsing where practical.
-- [ ] Run the focused file, Ruff/format, review every spec scoring rule, and commit the two files with `feat: add conservative diagnostic evidence rules`.
+- [x] Run `python -m pytest backend/tests/test_diagnostic_rules.py -p no:cacheprovider --show-capture=no`; observe failure before implementation.
+- [x] Use a stable Kahn topological sort: validate local IDs/edges, repeatedly select the earliest saved concept with zero remaining prerequisites, remove its outgoing edges, and reject if fewer than all concepts are emitted. Do not infer edges or reorder unrelated concepts alphabetically.
+- [x] Validate metadata bounds, at most six concepts, duplicate concepts/edges/question IDs, unknown/self references and cycles. Drafts allow zero concepts and 0–3 questions per concept; publication requires 1–6 concepts and exactly three each.
+- [x] Implement strict answer-map validation using exact question IDs and `type(value) is int` or null; reject bool/string/float, missing/extra keys and out-of-range indices. Classify each concept using the exact three-row spec table; compute ancestor reasons and first non-strength topological next action. All-strength gets spaced practice, never mastery.
+- [x] Add tests for dangling edges after rename/removal, stable ties, indirect cycles, Unicode/blank labels, length bounds, every evidence state, all-correct, all-wrong, mixed skips and key-free public projection. Diagnostic snapshot length checks precede large JSON parsing where practical.
+- [x] Run the focused file, Ruff/format, review every spec scoring rule, and commit the two files with `feat: add conservative diagnostic evidence rules`.
 
 ### Task 3: Add isolated storage and revision-safe staff drafts
 
 **Files:** Modify `backend/migrations.py`; create `backend/diagnostic_service.py`, `backend/tests/test_diagnostic_drafts.py`, `backend/tests/diagnostic_helpers.py`.
 **Interfaces:** Consume trusted `Identity`, `get_connection`, `now_iso`, `validate_definition`; produce `create_blueprint(conn, identity, creation_key, title, class_level, subject)`, `read_blueprint(conn, identity, blueprint_id)`, `save_blueprint(conn, identity, blueprint_id, expected_revision, definition)`, and `list_blueprints(conn, identity, after_id=0, limit=100)`.
 
-- [ ] In `diagnostic_helpers.py`, define `invoke(function, ids, actor, **kwargs)`: map `classmate` to student and `other_*` to school 2, construct the fixture Identity, open `db.get_connection()`, call `function(conn, identity, **kwargs)`, and close in `finally`. Tests use the existing `school_api` fixture; no network/server initialization is added.
-- [ ] Write draft tests before schema/service code:
+- [x] In `diagnostic_helpers.py`, define `invoke(function, ids, actor, **kwargs)`: map `classmate` to student and `other_*` to school 2, construct the fixture Identity, open `db.get_connection()`, call `function(conn, identity, **kwargs)`, and close in `finally`. Tests use the existing `school_api` fixture; no network/server initialization is added.
+- [x] Write draft tests before schema/service code:
 
 ```python
 def test_duplicate_draft_create_is_stable(school_api):
@@ -165,8 +165,8 @@ def test_duplicate_draft_create_is_stable(school_api):
     assert first["draft_revision"] == 1
 ```
 
-- [ ] Run `python -m pytest backend/tests/test_diagnostic_drafts.py -p no:cacheprovider --show-capture=no` and observe failure.
-- [ ] Add the next migration with three tables from the spec. Use nullable creator/publisher foreign keys with `ON DELETE SET NULL`; unique blueprint creation intent `(organization_id, created_by, creation_key)`, unique publication `(blueprint_id, draft_revision)`, unique attempt `(user_id, creation_key)`, and status/revision checks. Add composite unique parent keys and foreign keys so version/attempt school/class references cannot mismatch. Add scope/list indexes. Check fresh, legacy and rerun migration tests.
+- [x] Run `python -m pytest backend/tests/test_diagnostic_drafts.py -p no:cacheprovider --show-capture=no` and observe failure.
+- [x] Add the next migration with three tables from the spec. Use nullable creator/publisher foreign keys with `ON DELETE SET NULL`; unique blueprint creation intent `(organization_id, created_by, creation_key)`, unique publication `(blueprint_id, draft_revision)`, unique attempt `(user_id, creation_key)`, and status/revision checks. Add composite unique parent keys and foreign keys so version/attempt school/class references cannot mismatch. Add scope/list indexes. Check fresh, legacy and rerun migration tests.
 
 Canonical storage columns for the migration and service SQL:
 
@@ -211,16 +211,16 @@ CREATE INDEX idx_diagnostic_user ON diagnostic_attempts(user_id, created_at DESC
 ```
 
 Use `CREATE ... IF NOT EXISTS` in the actual migration so the repository's rerun/partial-upgrade tests remain supported. Compare the stored immutable `creation_fingerprint` with normalized original create parameters, not a later edited draft definition. Consistent JSON encoding is `json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False)`.
-- [ ] Require current active staff/school for drafts and re-read current active student/class for student lists. Writes use `BEGIN IMMEDIATE`; identical creation fingerprints recover, changed reuse conflicts. Draft replacement checks revision and increments once; validation fails before changing the saved draft.
-- [ ] Add stale-edit/dangling-edge preservation tests, four concurrent creates, changed-key reuse, wrong roles and other-school 404s. List latest publications with a bounded SQL join, not one query per row.
-- [ ] Run the focused file and `backend/tests/test_migrations.py`; commit the four files with `feat: add school-scoped diagnostic drafts`.
+- [x] Require current active staff/school for drafts and re-read current active student/class for student lists. Writes use `BEGIN IMMEDIATE`; identical creation fingerprints recover, changed reuse conflicts. Draft replacement checks revision and increments once; validation fails before changing the saved draft.
+- [x] Add stale-edit/dangling-edge preservation tests, four concurrent creates, changed-key reuse, wrong roles and other-school 404s. List latest publications with a bounded SQL join, not one query per row.
+- [x] Run the focused file and `backend/tests/test_migrations.py`; commit the four files with `feat: add school-scoped diagnostic drafts`.
 
 ### Task 4: Publish immutable, currently eligible assessments
 
 **Files:** Modify `backend/diagnostic_service.py`; create `backend/tests/test_diagnostic_publication.py`; extend `backend/tests/diagnostic_helpers.py`.
 **Interfaces:** Produce `question_candidates(conn, identity, blueprint_id, after_id=0, limit=100)`, `publish_blueprint(conn, identity, blueprint_id, expected_revision)`, `withdraw_version(conn, identity, version_id)`. Helper `approved_questions(client, headers, count, chapter='Diagnostic foundations') -> list[int]` creates valid Math/class-8 MCQs through existing question/review APIs; `published_blueprint(client, ids, headers, concepts=1) -> dict` builds/publishes a complete service draft.
 
-- [ ] Write failing tests for incomplete coverage, cross-school/class/subject question IDs and publication replay. An identical publication replay checks `(blueprint_id, expected_revision)` before rejecting a later draft revision; it returns the original version, even if withdrawn, without reactivating it.
+- [x] Write failing tests for incomplete coverage, cross-school/class/subject question IDs and publication replay. An identical publication replay checks `(blueprint_id, expected_revision)` before rejecting a later draft revision; it returns the original version, even if withdrawn, without reactivating it.
 
 ```python
 def test_publication_replay_cannot_reactivate_withdrawn_version(school_api):
@@ -236,19 +236,19 @@ def test_publication_replay_cannot_reactivate_withdrawn_version(school_api):
     assert replay["withdrawn_at"] is not None
     assert invoke(service.list_blueprints, ids, "student")["blueprints"] == []
 ```
-- [ ] Run `python -m pytest backend/tests/test_diagnostic_publication.py -p no:cacheprovider --show-capture=no` before implementation.
-- [ ] Add SQL text/JSON-length bounds and keyset pagination before fetching at most `limit + 1` candidate rows. Use diagnostic eligibility to omit malformed rows; advance `next_after_id` by the scanned page boundary, even when all rows are invalid.
-- [ ] Publish in one transaction: load own-school draft, validate full coverage/DAG, fetch the at-most-18 referenced own-school/class/subject questions, validate current approval/content, snapshot in stable order, insert immutable next version and commit. Candidate/body failures contain no private keys.
-- [ ] Implement terminal, idempotent withdrawal. List latest version using maximum version number before applying withdrawal/class eligibility; never select “most recent active” as a fallback.
-- [ ] Add tests for 101 historical invalid rows followed by one valid candidate, strict cursor advance, exact subject mismatch, duplicate question reuse, four-way publication races, failed publication rollback, withdrawn-latest hiding and key-free student list metadata.
-- [ ] Run publication/draft/rule tests and Ruff/format; commit only the task files with `feat: publish reviewed diagnostic versions`.
+- [x] Run `python -m pytest backend/tests/test_diagnostic_publication.py -p no:cacheprovider --show-capture=no` before implementation.
+- [x] Add SQL text/JSON-length bounds and keyset pagination before fetching at most `limit + 1` candidate rows. Use diagnostic eligibility to omit malformed rows; advance `next_after_id` by the scanned page boundary, even when all rows are invalid.
+- [x] Publish in one transaction: load own-school draft, validate full coverage/DAG, fetch the at-most-18 referenced own-school/class/subject questions, validate current approval/content, snapshot in stable order, insert immutable next version and commit. Candidate/body failures contain no private keys.
+- [x] Implement terminal, idempotent withdrawal. List latest version using maximum version number before applying withdrawal/class eligibility; never select “most recent active” as a fallback.
+- [x] Add tests for 101 historical invalid rows followed by one valid candidate, strict cursor advance, exact subject mismatch, duplicate question reuse, four-way publication races, failed publication rollback, withdrawn-latest hiding and key-free student list metadata.
+- [x] Run publication/draft/rule tests and Ruff/format; commit only the task files with `feat: publish reviewed diagnostic versions`.
 
 ### Task 5: Own attempts and atomic, retry-safe completion
 
 **Files:** Modify `backend/diagnostic_service.py`; create `backend/tests/test_diagnostic_attempts.py`; extend `backend/tests/diagnostic_helpers.py` only for the complete two-concept fixture.
 **Interfaces:** Produce `start_attempt(conn, identity, creation_key, version_id)`, `read_attempt(conn, identity, attempt_id)`, `submit_attempt(conn, identity, attempt_id, answers)`. Return the shared public-attempt contract; only completion exposes own feedback.
 
-- [ ] Write a failing test for repeated submission: create/publish a fixture, start as student, submit all indices 0 twice, assert equal results, one `diagnostic_completed` event and zero new legacy progress rows. Use a new DB connection for counts, never a global/live DB.
+- [x] Write a failing test for repeated submission: create/publish a fixture, start as student, submit all indices 0 twice, assert equal results, one `diagnostic_completed` event and zero new legacy progress rows. Use a new DB connection for counts, never a global/live DB.
 
 ```python
 def test_identical_submission_commits_once_without_mastery_inflation(school_api):
@@ -270,19 +270,19 @@ def test_identical_submission_commits_once_without_mastery_inflation(school_api)
     finally:
         conn.close()
 ```
-- [ ] Run `python -m pytest backend/tests/test_diagnostic_attempts.py -p no:cacheprovider --show-capture=no` before implementation.
-- [ ] For start, lock and read an existing `(user_id, creation_key)` first. Recover it if the intent/version and current account scope match and pending content remains eligible; only new intents require latest-version eligibility. This ordering preserves recovery after a newer publication.
-- [ ] Centralize pending eligibility: current own user/school/class, non-withdrawn version and still-approved exact question snapshots. Completed reads/replays skip content-recall checks but never owner/current-scope checks. No duplicate API-side grade/progress fallback.
-- [ ] Submission locks, loads the attempt, validates all answers, replays identical completed answers or conflicts on different answers, checks pending content, scores, stores completion and inserts one minimal event, then commits. Event metadata contains IDs/counts, not questions, keys or raw answers.
-- [ ] Add four-way start/submit races, newer publication after lost creation response, changed-key conflict, recalled/edited question, withdrawn version, superseded eligible version, class/school change, deactivation, all-skip and completed historical read tests. Inject failure after attempt update but before event insertion; assert both rolled back. Read a completed attempt after simulated response loss and assert event count stays one.
-- [ ] Run all diagnostic and reviewed-practice tests, review transaction boundaries, and commit with `feat: score private diagnostic attempts atomically`.
+- [x] Run `python -m pytest backend/tests/test_diagnostic_attempts.py -p no:cacheprovider --show-capture=no` before implementation.
+- [x] For start, lock and read an existing `(user_id, creation_key)` first. Recover it if the intent/version and current account scope match and pending content remains eligible; only new intents require latest-version eligibility. This ordering preserves recovery after a newer publication.
+- [x] Centralize pending eligibility: current own user/school/class, non-withdrawn version and still-approved exact question snapshots. Completed reads/replays skip content-recall checks but never owner/current-scope checks. No duplicate API-side grade/progress fallback.
+- [x] Submission locks, loads the attempt, validates all answers, replays identical completed answers or conflicts on different answers, checks pending content, scores, stores completion and inserts one minimal event, then commits. Event metadata contains IDs/counts, not questions, keys or raw answers.
+- [x] Add four-way start/submit races, newer publication after lost creation response, changed-key conflict, recalled/edited question, withdrawn version, superseded eligible version, class/school change, deactivation, all-skip and completed historical read tests. Inject failure after attempt update but before event insertion; assert both rolled back. Read a completed attempt after simulated response loss and assert event count stays one.
+- [x] Run all diagnostic and reviewed-practice tests, review transaction boundaries, and commit with `feat: score private diagnostic attempts atomically`.
 
 ### Task 6: Expose strict HTTP contracts and route authorization
 
 **Files:** Create `backend/diagnostic_models.py`, `backend/diagnostic_routes.py`, `backend/tests/test_diagnostic_authorization.py`; modify `backend/main.py`.
 **Interfaces:** Implement the ten spec endpoints under `/v2/diagnostics`, with response models matching the shared contract. Produce `router`; consume service functions and `get_identity`.
 
-- [ ] Write missing-route tests using `school_api`, including a forged score/key:
+- [x] Write missing-route tests using `school_api`, including a forged score/key:
 
 ```python
 def test_blueprint_creation_forbids_caller_owned_school(school_api):
@@ -295,18 +295,18 @@ def test_blueprint_creation_forbids_caller_owned_school(school_api):
     assert response.status_code == 422
 ```
 
-- [ ] Run `python -m pytest backend/tests/test_diagnostic_authorization.py -p no:cacheprovider --show-capture=no`; the first run must fail before routes exist.
-- [ ] Define all input models with `ConfigDict(extra='forbid')`, bounded trimmed strings, `StrictInt`, UUID intent/attempt IDs and strict integer-or-null answer maps of 1–18 entries. Bound blueprint/version numeric IDs and pagination. Define explicit public/private DTO projections; students never receive staff snapshots.
-- [ ] Follow the existing route/service `_call` pattern with connection `finally` closure and bounded rule/domain error conversion. Every endpoint explicitly depends on `get_identity`; service functions enforce method-specific live role/resource scope. Add one import/router registration in main, not business logic.
-- [ ] Add route-policy audit coverage, anonymous 401, adult-role 403, cross-user/school 404, stale 409 and invalid 422 cases; exercise real cookie/CSRF writes, live role/deactivation and absence of keys in errors. Assert repeated GETs create no events/mastery snapshots and no model-generating route is invoked.
-- [ ] Run authorization, all diagnostic, cookie/route-audit tests and Ruff/format; commit the four files with `feat: expose authorized diagnostic API contracts`.
+- [x] Run `python -m pytest backend/tests/test_diagnostic_authorization.py -p no:cacheprovider --show-capture=no`; the first run must fail before routes exist.
+- [x] Define all input models with `ConfigDict(extra='forbid')`, bounded trimmed strings, `StrictInt`, UUID intent/attempt IDs and strict integer-or-null answer maps of 1–18 entries. Bound blueprint/version numeric IDs and pagination. Define explicit public/private DTO projections; students never receive staff snapshots.
+- [x] Follow the existing route/service `_call` pattern with connection `finally` closure and bounded rule/domain error conversion. Every endpoint explicitly depends on `get_identity`; service functions enforce method-specific live role/resource scope. Add one import/router registration in main, not business logic.
+- [x] Add route-policy audit coverage, anonymous 401, adult-role 403, cross-user/school 404, stale 409 and invalid 422 cases; exercise real cookie/CSRF writes, live role/deactivation and absence of keys in errors. Assert repeated GETs create no events/mastery snapshots and no model-generating route is invoked.
+- [x] Run authorization, all diagnostic, cookie/route-audit tests and Ruff/format; commit the four files with `feat: expose authorized diagnostic API contracts`.
 
 ### Task 7: Cover diagnostic privacy and publisher erasure
 
 **Files:** Create `backend/diagnostic_privacy.py`, `backend/tests/test_diagnostic_privacy.py`; modify `backend/privacy_service.py`.
 **Interfaces:** Produce `export_diagnostics(conn, user_id) -> dict` and `erase_diagnostics(conn, user_id) -> None`; these do not commit, so the existing privacy transaction owns completion.
 
-- [ ] Write a failing export test: an active student attempt exports public questions and own metadata only; recursively serialize and assert absence of `correct_index`, `explanation`, raw version `snapshot_json` and other students' attempts.
+- [x] Write a failing export test: an active student attempt exports public questions and own metadata only; recursively serialize and assert absence of `correct_index`, `explanation`, raw version `snapshot_json` and other students' attempts.
 
 ```python
 def test_pending_export_has_no_private_version_snapshot(school_api):
@@ -328,11 +328,11 @@ def test_pending_export_has_no_private_version_snapshot(school_api):
     finally:
         conn.close()
 ```
-- [ ] Run `python -m pytest backend/tests/test_diagnostic_privacy.py -p no:cacheprovider --show-capture=no` before implementation.
-- [ ] Export own attempts with allowlisted projections, adding feedback only after completion. Staff author export follows own-authored data policy and must not gather other learners' attempts through versions. Do not expose full published snapshots to a student through joins.
-- [ ] Erase owned attempts and existing owned learning events inside canonical privacy erasure. Remove creator-owned drafts without historical consumers; anonymize creator/publisher IDs for retained school history. Withdraw all retained versions of an erased creator's blueprint rather than deleting the latest and exposing an older one; clear unpublished draft text to a valid empty draft and increment its revision. Completed evidence for other students remains readable; pending attempts affected by recall/withdrawal stop. A subsequent staff publication requires a newly reviewed draft and version.
-- [ ] Add publisher-erasure after another learner's completion, null-author FK, no-earlier-version-reactivation, failed privacy transaction rollback, active-vs-completed export and cross-user isolation cases. State free-text/school-history and backup limitations in the privacy documentation, not a compliance claim.
-- [ ] Run diagnostic privacy plus the existing privacy/authorization suite; commit only task files with `feat: include diagnostic evidence in privacy lifecycle`.
+- [x] Run `python -m pytest backend/tests/test_diagnostic_privacy.py -p no:cacheprovider --show-capture=no` before implementation.
+- [x] Export own attempts with allowlisted projections, adding feedback only after completion. Staff author export follows own-authored data policy and must not gather other learners' attempts through versions. Do not expose full published snapshots to a student through joins.
+- [x] Erase owned attempts and existing owned learning events inside canonical privacy erasure. Remove creator-owned drafts without historical consumers; anonymize creator/publisher IDs for retained school history. Withdraw all retained versions of an erased creator's blueprint rather than deleting the latest and exposing an older one; clear unpublished draft text to a valid empty draft and increment its revision. Completed evidence for other students remains readable; pending attempts affected by recall/withdrawal stop. A subsequent staff publication requires a newly reviewed draft and version.
+- [x] Add publisher-erasure after another learner's completion, null-author FK, no-earlier-version-reactivation, failed privacy transaction rollback, active-vs-completed export and cross-user isolation cases. State free-text/school-history and backup limitations in the privacy documentation, not a compliance claim.
+- [x] Run diagnostic privacy plus the existing privacy/authorization suite; commit only task files with `feat: include diagnostic evidence in privacy lifecycle`.
 
 ### Task 8: Add typed frontend API and scoped online resume
 
@@ -363,7 +363,7 @@ type DiagnosticApiContract = {
 
 `DiagnosticBlueprint` has `id`, `definition`, `draft_revision`, `latest_version`, `preview`, `preview_warnings`. `DiagnosticVersion` has `id`, `blueprint_id`, `version_number`, `draft_revision`, `class_level`, `subject`, `published_at`, `withdrawn_at`, `concept_count`, `question_count`. Lists use cards containing ID/title/class/subject/counts/latest version; only staff cards have draft revision. Candidate/preview question DTOs include private keys only in staff-only responses. Learner attempts/results follow the Shared Interface Contract exactly.
 
-- [ ] Write failing scope/storage tests:
+- [x] Write failing scope/storage tests:
 
 ```typescript
 it('does not resume another learner or class', () => {
@@ -374,17 +374,17 @@ it('does not resume another learner or class', () => {
 });
 ```
 
-- [ ] Run `npm test -- src/lib/diagnostic-resume.test.ts` from frontend; observe missing-module failure.
-- [ ] Implement `saveDiagnosticResume(identity, attemptId)`, `readDiagnosticResume(identity): string|null` and `clearDiagnosticResume(identity)`. Use a `sakhi_diagnostic_attempt:` key containing exact school/user/encoded class scope. Validate stored UUID; store only attempt ID, no keys/credentials/results or unsent answers. Return null safely on corrupt/blocked storage; server GET must authorize before rendering.
-- [ ] Add typed wrappers through existing `apiFetch<T>`; do not change automatic write-retry policy. Creation/publish/submission intent handling belongs to callers. Add local credential-free storage and `clearDeviceData()` erasure coverage, leaving the exact public-cache preservation policy unchanged.
-- [ ] Run resume/device/session tests, TypeScript and lint; commit the five files with `feat: add typed diagnostic client and scoped resume`.
+- [x] Run `npm test -- src/lib/diagnostic-resume.test.ts` from frontend; observe missing-module failure.
+- [x] Implement `saveDiagnosticResume(identity, attemptId)`, `readDiagnosticResume(identity): string|null` and `clearDiagnosticResume(identity)`. Use a `sakhi_diagnostic_attempt:` key containing exact school/user/encoded class scope. Validate stored UUID; store only attempt ID, no keys/credentials/results or unsent answers. Return null safely on corrupt/blocked storage; server GET must authorize before rendering.
+- [x] Add typed wrappers through existing `apiFetch<T>`; do not change automatic write-retry policy. Creation/publish/submission intent handling belongs to callers. Add local credential-free storage and `clearDeviceData()` erasure coverage, leaving the exact public-cache preservation policy unchanged.
+- [x] Run resume/device/session tests, TypeScript and lint; commit the five files with `feat: add typed diagnostic client and scoped resume`.
 
 ### Task 9: Build staff curation without enlarging the teacher dashboard
 
 **Files:** Create `frontend/src/components/diagnostics/DiagnosticEditor.tsx`, `DiagnosticConceptEditor.tsx`, `DiagnosticEditor.test.tsx`, `DiagnosticConceptEditor.test.tsx`. The page shell/navigation lands in Task 11.
 **Interfaces:** `DiagnosticEditor({identity: DiagnosticIdentity})`; child `DiagnosticConceptEditor({concept, peers, candidates, disabled, onChange})`, using the exact Task 8 DTOs. The editor uses the ten typed API helpers; preview is read-only and produces no attempt/event.
 
-- [ ] Write failing RTL tests for labelled metadata, adding/removing concepts, approved candidate selection, prerequisites, incomplete publication, stale-edit 409, read-only preview and withdrawal. Use real project children; mock API/router/session boundaries only.
+- [x] Write failing RTL tests for labelled metadata, adding/removing concepts, approved candidate selection, prerequisites, incomplete publication, stale-edit 409, read-only preview and withdrawal. Use real project children; mock API/router/session boundaries only.
 
 Initial test uses spies on the existing API boundary, with no mocked project child:
 
@@ -396,18 +396,18 @@ it('keeps publication disabled for an empty concept graph', async () => {
   expect(screen.getByRole('button', { name: /publish assessment/i })).toBeDisabled();
 });
 ```
-- [ ] Run `npm test -- src/components/diagnostics/DiagnosticEditor.test.tsx src/components/diagnostics/DiagnosticConceptEditor.test.tsx` before implementation.
-- [ ] Build a separate editor with stable creation UUID per draft intent, save-before-publish using the returned revision, pagination controls for candidates, explicit “Staff preview” and “Publish assessment”/“Withdraw version” buttons. A stale save preserves local edits and offers reload; it never silently overwrites. Mutations disable competing actions and ignore responses after identity/unmount changes.
-- [ ] Use labelled concept-ID/label fields and checkbox prerequisite controls; block removing a referenced concept until its edges are removed. Explain exactly three selected questions and show current selection count. Render validation/errors as text, not color only. A preview reads already-authorized staff data and never calls start/submit.
-- [ ] Test a renamed/removed concept with dangling edges, Unicode/long labels, empty candidates, later candidate pages, changed school/account, failed publication and identical publish recovery. Verify the child file before parent integration and keep each component focused.
-- [ ] Run both files, lint and types; commit only these four files with `feat: add school diagnostic curation editor`.
+- [x] Run `npm test -- src/components/diagnostics/DiagnosticEditor.test.tsx src/components/diagnostics/DiagnosticConceptEditor.test.tsx` before implementation.
+- [x] Build a separate editor with stable creation UUID per draft intent, save-before-publish using the returned revision, pagination controls for candidates, explicit “Staff preview” and “Publish assessment”/“Withdraw version” buttons. A stale save preserves local edits and offers reload; it never silently overwrites. Mutations disable competing actions and ignore responses after identity/unmount changes.
+- [x] Use labelled concept-ID/label fields and checkbox prerequisite controls; block removing a referenced concept until its edges are removed. Explain exactly three selected questions and show current selection count. Render validation/errors as text, not color only. A preview reads already-authorized staff data and never calls start/submit.
+- [x] Test a renamed/removed concept with dangling edges, Unicode/long labels, empty candidates, later candidate pages, changed school/account, failed publication and identical publish recovery. Verify the child file before parent integration and keep each component focused.
+- [x] Run both files, lint and types; commit only these four files with `feat: add school diagnostic curation editor`.
 
 ### Task 10: Build the learner assessment and server-evidence result
 
 **Files:** Create `frontend/src/components/diagnostics/DiagnosticAssessment.tsx`, `DiagnosticResult.tsx`, `DiagnosticAssessment.test.tsx`, `DiagnosticResult.test.tsx`.
 **Interfaces:** `DiagnosticAssessment({identity: DiagnosticIdentity})`; `DiagnosticResult({result: DiagnosticResult; concepts: DiagnosticAttempt['concepts']})`. Imports use a type alias if needed to avoid component/type name collision.
 
-- [ ] Write failing tests for empty/error/reload states, active resume, explicit skip, frozen uncertain submission and completed result focus. Submit must require all question keys; undefined is not null.
+- [x] Write failing tests for empty/error/reload states, active resume, explicit skip, frozen uncertain submission and completed result focus. Submit must require all question keys; undefined is not null.
 
 The first result test is standalone, so its real result component is verified before assessment integration:
 
@@ -430,19 +430,19 @@ it('reports skipped coverage without claiming mastery', () => {
 ```
 
 Import `DiagnosticResult` DTO as `DiagnosticEvidenceResult` in this test/component to avoid its component-name collision. Provide explicit imports of `render`, `screen`, `it`, `expect`, API spies and components in their test modules.
-- [ ] Run `npm test -- src/components/diagnostics/DiagnosticAssessment.test.tsx src/components/diagnostics/DiagnosticResult.test.tsx` before implementation.
-- [ ] Key assessment state by user/school/class. Load the server-authorized stored attempt or list, keep a UUID for each in-page creation intent, and save the returned attempt ID. Use fieldset/legend and labelled radio options plus “I'm not sure”; build a strict ID-to-index/null payload. Freeze the submitted map for identical retry; no local score or alternate evaluator.
-- [ ] Distinguish 401/403, missing 404, recalled/stale 409, validation 422 and transient network failures. Missing/recalled references are cleared with an explained return to list; a completed response lost before reload is recovered through GET. If a changed-answer 409 reveals an already-completed attempt, fetch/show the authoritative stored result with an explicit notice, not a silent overwrite.
-- [ ] Render count-based evidence states, skipped coverage, separate prerequisite reasons and the deterministic next step. Focus the result heading; show the school-defined/tentative/repeated-question notices and practice link. Clear the old reference on explicit new attempt; do not persist unsent choices or queue offline writes.
-- [ ] Add commit-before-response-loss resume, all-skip/no-zero-division, mixed counts, all-strength spaced practice, account/class switch, stale callback, radio keyboard and focus tests. Verify result component first, then integrate into assessment.
-- [ ] Run focused tests, lint and types; commit only these four files with `feat: add diagnostic assessment and explained evidence UI`.
+- [x] Run `npm test -- src/components/diagnostics/DiagnosticAssessment.test.tsx src/components/diagnostics/DiagnosticResult.test.tsx` before implementation.
+- [x] Key assessment state by user/school/class. Load the server-authorized stored attempt or list, keep a UUID for each in-page creation intent, and save the returned attempt ID. Use fieldset/legend and labelled radio options plus “I'm not sure”; build a strict ID-to-index/null payload. Freeze the submitted map for identical retry; no local score or alternate evaluator.
+- [x] Distinguish 401/403, missing 404, recalled/stale 409, validation 422 and transient network failures. Missing/recalled references are cleared with an explained return to list; a completed response lost before reload is recovered through GET. If a changed-answer 409 reveals an already-completed attempt, fetch/show the authoritative stored result with an explicit notice, not a silent overwrite.
+- [x] Render count-based evidence states, skipped coverage, separate prerequisite reasons and the deterministic next step. Focus the result heading; show the school-defined/tentative/repeated-question notices and practice link. Clear the old reference on explicit new attempt; do not persist unsent choices or queue offline writes.
+- [x] Add commit-before-response-loss resume, all-skip/no-zero-division, mixed counts, all-strength spaced practice, account/class switch, stale callback, radio keyboard and focus tests. Verify result component first, then integrate into assessment.
+- [x] Run focused tests, lint and types; commit only these four files with `feat: add diagnostic assessment and explained evidence UI`.
 
 ### Task 11: Integrate authenticated pages and responsive navigation
 
 **Files:** Create `frontend/src/app/diagnostics/page.tsx`, `frontend/src/app/teacher/diagnostics/page.tsx`, `frontend/src/app/diagnostics/page.test.tsx`; modify `frontend/src/components/Sidebar.tsx`, `frontend/src/app/globals.css`.
 **Interfaces:** Student page allows `['student']`; staff page allows `['teacher','admin']` through constant role arrays and `useRequireAuth`. Construct diagnostic identity only after session readiness and non-null school; render a clear school-required state otherwise.
 
-- [ ] Write failing page tests for anonymous redirect, adult/student denial, unready session, missing school and own identity passed to the real assessment. Test the new navigation links through the real sidebar in the new page test, using the actual AccessibilityProvider and mocked API/router/session boundaries; do not add another file to this task.
+- [x] Write failing page tests for anonymous redirect, adult/student denial, unready session, missing school and own identity passed to the real assessment. Test the new navigation links through the real sidebar in the new page test, using the actual AccessibilityProvider and mocked API/router/session boundaries; do not add another file to this task.
 
 ```typescript
 const readyStudentContext: ReturnType<typeof userContext.useUser> = {
@@ -465,17 +465,17 @@ it('shows the school requirement without starting an assessment', async () => {
 ```
 
 The fixture uses the actual exported hook's return type because the internal `UserContextValue` type is not exported. Stub router navigation and restore mocks between cases; do not use an `any` cast or omit required session fields.
-- [ ] Run the new page file and affected sidebar tests before integration.
-- [ ] Add thin page shells with one h1/main landmark, existing Sidebar and the focused components. Add “Diagnostics” learner navigation and “Diagnostic editor” staff navigation, without changing existing teacher-dashboard tabs. Mobile content reserves the menu area and uses an explicit vertical scroll region.
-- [ ] Add scoped diagnostic CSS using existing tokens; make controls at least 44px high on mobile, bound grids/selects/text, support wrapping, visible focus and reduced motion. Do not rewrite unrelated global themes.
-- [ ] Run page/sidebar/diagnostic component tests, full frontend tests, lint/types/build; commit only this task's actual changes with `feat: integrate responsive diagnostic pages`.
+- [x] Run the new page file and affected sidebar tests before integration.
+- [x] Add thin page shells with one h1/main landmark, existing Sidebar and the focused components. Add “Diagnostics” learner navigation and “Diagnostic editor” staff navigation, without changing existing teacher-dashboard tabs. Mobile content reserves the menu area and uses an explicit vertical scroll region.
+- [x] Add scoped diagnostic CSS using existing tokens; make controls at least 44px high on mobile, bound grids/selects/text, support wrapping, visible focus and reduced motion. Do not rewrite unrelated global themes.
+- [x] Run page/sidebar/diagnostic component tests, full frontend tests, lint/types/build; commit only this task's actual changes with `feat: integrate responsive diagnostic pages`.
 
 ### Task 12: Verify the complete workflow and record exact coverage
 
 **Files:** Modify `tests/e2e/sakhi.spec.cjs`, `tests/e2e/sakhi.md`, `docs/browser-testing.md`; create `docs/diagnostics.md`, `docs/verification-diagnostics.md`. Update the overall tracker after evidence, without claiming other phases complete.
 **Interfaces:** Reuse `BasePage`, installed runtime/Edge, loopback 8100/3101 fixture, real cookie proxy and condition-based locators. Do not download the previously security-review-blocked browser CLI.
 
-- [ ] Add actual UI journeys after the existing practice case so the new bank content does not break its one-question precondition. Create six Math/class-8 questions in a distinct diagnostic chapter, approve them, curate a two-concept chain and publish it through the editor. No live school or direct fixture mutation substitutes for the user-facing curation flow.
+- [x] Add actual UI journeys after the existing practice case so the new bank content does not break its one-question precondition. Create six Math/class-8 questions in a distinct diagnostic chapter, approve them, curate a two-concept chain and publish it through the editor. No live school or direct fixture mutation substitutes for the user-facing curation flow.
 
 Start the new browser case with the existing fixture/page-object boundaries and finish with user-visible publication state:
 
@@ -490,11 +490,11 @@ test('staff publication enables private diagnostic evidence and recall handling'
 ```
 
 Expand this same case through the explicit authoring/student/withdrawal steps below; this initial smoke assertion alone is not diagnostic acceptance. Explore real editor labels before fixing its final selectors, and use locator/response conditions rather than fixed sleeps.
-- [ ] Learner journey selects the publication, reloads to resume, submits a mix of wrong/correct/skip answers and verifies exact counts/prerequisite reasons, server result focus and key-free active payload. Check 320/768/1024/1440px bounds, scroll and keyboard controls. Logout/login as classmate must show no prior attempt/result.
-- [ ] Start a separate pending attempt, withdraw its version through staff UI, then verify visible learner denial. Completed historical result still loads. A new list does not reactivate an older version. Keep expected deliberate errors recorded; unexpected console/page errors fail normal journeys.
-- [ ] Use fresh temporary backend state and a freshly built standalone frontend. Run `python -m pytest -p no:cacheprovider --tb=short --show-capture=no`, Ruff/format, `python evals/run_evals.py`, full frontend tests/lint/build and `node --test tests/e2e/sakhi.spec.cjs` with the environment in `docs/browser-testing.md`. Inspect mobile/result/withdrawal screenshots, not only DOM assertions.
-- [ ] Record red/green reproductions, exact pass/failure/skip counts, browser/runtime versions, console evidence, commands and untested coverage. Refresh dependency audit status separately; never call an inconclusive/global scan a clean project audit. Do not reuse the October 12 test totals as new evidence.
-- [ ] Publish contract/authoring/resume/privacy limits in `docs/diagnostics.md`; mark task 9 accepted only after every spec acceptance item maps to passing evidence. Keep task 10 and measured-learning-gain checkpoints open. Review the full feature diff, then commit only the feature verification/doc changes with `test: verify school diagnostic workflow end to end`.
+- [x] Learner journey selects the publication, reloads to resume, submits a mix of wrong/correct/skip answers and verifies exact counts/prerequisite reasons, server result focus and key-free active payload. Check 320/768/1024/1440px bounds, scroll and keyboard controls. Logout/login as classmate must show no prior attempt/result.
+- [x] Start a separate pending attempt, withdraw its version through staff UI, then verify visible learner denial. Completed historical result still loads. A new list does not reactivate an older version. Keep expected deliberate errors recorded; unexpected console/page errors fail normal journeys.
+- [x] Use fresh temporary backend state and a freshly built standalone frontend. Run `python -m pytest -p no:cacheprovider --tb=short --show-capture=no`, Ruff/format, `python evals/run_evals.py`, full frontend tests/lint/build and `node --test tests/e2e/sakhi.spec.cjs` with the environment in `docs/browser-testing.md`. Inspect mobile/result/withdrawal screenshots, not only DOM assertions.
+- [x] Record red/green reproductions, exact pass/failure/skip counts, browser/runtime versions, console evidence, commands and untested coverage. Refresh dependency audit status separately; never call an inconclusive/global scan a clean project audit. Do not reuse the October 12 test totals as new evidence.
+- [x] Publish contract/authoring/resume/privacy limits in `docs/diagnostics.md`; mark task 9 accepted only after every spec acceptance item maps to passing evidence. Keep task 10 and measured-learning-gain checkpoints open. Review the full feature diff, then commit only the feature verification/doc changes with `test: verify school diagnostic workflow end to end`.
 
 ## Spec Coverage and Handoff
 

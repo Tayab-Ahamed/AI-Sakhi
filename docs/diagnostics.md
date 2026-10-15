@@ -10,6 +10,8 @@ Add one to six concepts. Local IDs start with a lowercase letter and contain at 
 
 Publish only when each concept has exactly three distinct approved MCQs. No question may be shared between concepts. Paginated candidates match the saved school/class/subject; malformed historical pages still advance. Save changed class/subject metadata, then refresh candidates. **Staff preview** shows saved selections independently of the current page and warns about unavailable questions without replacing them. It creates no learner evidence.
 
+Reopen a draft to refresh eligibility after a question is recalled or its scope changes. **Remove selected question** frees an unavailable selection without deleting the concept or its prerequisite links; choose a replacement before publishing. A definitive server 401/403 clears private staff content and pending intents, ignores late responses and offers **Sign in again**. Ordinary network, validation and revision errors preserve local edits.
+
 Saving uses an expected revision. A stale response preserves local edits and offers explicit reload, never silent overwrite. Publishing saves first, then creates an immutable private snapshot/version. Uncertain publication retries the same saved revision. Teachers may publish their own content; independent second-reviewer approval is not claimed.
 
 Withdrawal is terminal: it blocks new starts and unfinished attempts, while preserving completed history. New starts never fall back to an older version. A newly reviewed draft revision can publish a new version. Superseded nonwithdrawn attempts may finish if their content remains eligible.
@@ -38,7 +40,7 @@ There is no private service-worker cache or offline submission queue: reconnect 
 
 ## Security, storage and privacy
 
-Ten `/v2/diagnostics` routes use explicit authentication, live scope checks, same-origin cookies/CSRF and existing limits. Bodies forbid extra fields and caller authority. IDs/indices are strict integers; bool/string/float, missing/extra IDs and out-of-range selections are rejected. SQL length/page bounds precede historical JSON parsing. Errors contain no answer keys.
+Ten `/v2/diagnostics` routes use explicit authentication, live scope checks, same-origin cookies/CSRF and existing limits. Modeled write bodies forbid extra fields and caller authority. Withdrawal is bodyless and currently ignores arbitrary non-authority body fields; strict empty-body alignment is a deferred contract cleanup, not a scoring/authority bypass. IDs/indices are strict integers; bool/string/float, missing/extra IDs and out-of-range selections are rejected. SQL length/page bounds precede historical JSON parsing. Errors contain no answer keys.
 
 Own export includes attempts and completed feedback; pending exports remain key-free. Staff author exports contain their own drafts/publications, not learners' attempts through joins. Active-database erasure removes owned attempts/events and unpublished drafts without publications. Retained school publications are withdrawn/anonymized, and unpublished draft text/original creation fingerprint cleared; other learners' completed evidence stays stable.
 

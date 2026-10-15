@@ -48,7 +48,7 @@ it("requires a selection or explicit skip for every question and renders server 
   expect(screen.getByRole("button", { name: "Submit assessment" })).toBeDisabled();
   expect(screen.queryByText(/reviewed teacher explanation/i)).not.toBeInTheDocument();
   answerMixed(); fireEvent.click(screen.getByRole("button", { name: "Submit assessment" }));
-  expect(await screen.findByRole("heading", { name: "Diagnostic evidence" })).toHaveFocus();
+  await waitFor(() => expect(screen.getByRole("heading", { name: "Diagnostic evidence" })).toHaveFocus());
   expect(api.submitDiagnostic).toHaveBeenCalledWith(active.id, { "1": 0, "2": 1, "3": null });
   expect(screen.getByText(/1 correct · 2 answered · 1 skipped/i)).toBeVisible();
   expect(readDiagnosticResume(identity)).toBe(active.id);
@@ -93,7 +93,7 @@ it("recovers a committed result after response loss and online reload without re
   await screen.findByRole("alert"); view.unmount();
   vi.mocked(api.getDiagnosticAttempt).mockResolvedValue(completed);
   render(<DiagnosticAssessment identity={identity} />);
-  expect(await screen.findByRole("heading", { name: "Diagnostic evidence" })).toHaveFocus();
+  await waitFor(() => expect(screen.getByRole("heading", { name: "Diagnostic evidence" })).toHaveFocus());
   expect(api.submitDiagnostic).toHaveBeenCalledTimes(1);
 });
 
@@ -102,7 +102,7 @@ it("explains a changed-answer conflict before displaying the authoritative store
   vi.mocked(api.getDiagnosticAttempt).mockResolvedValue(completed);
   render(<DiagnosticAssessment identity={identity} />); await start(); answerMixed();
   fireEvent.click(screen.getByRole("button", { name: "Submit assessment" }));
-  expect(await screen.findByRole("heading", { name: "Diagnostic evidence" })).toHaveFocus();
+  await waitFor(() => expect(screen.getByRole("heading", { name: "Diagnostic evidence" })).toHaveFocus());
   expect(screen.getByText(/server already stored.*your draft answers were not saved/i)).toBeVisible();
 });
 

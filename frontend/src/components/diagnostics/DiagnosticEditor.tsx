@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import Link from "next/link";
 import type { DiagnosticIdentity } from "@/lib/diagnostics";
 import { DiagnosticConceptEditor } from "./DiagnosticConceptEditor";
 import { useDiagnosticEditor } from "./use-diagnostic-editor";
@@ -20,6 +21,10 @@ function EditorSession({ identity }: { identity: DiagnosticIdentity }) {
     let index = 1; while (used.has(`concept-${index}`)) index++;
     setDefinition({ ...definition, concepts: [...definition.concepts, { id: `concept-${index}`, label: `New concept ${index}`, prerequisite_ids: [], question_ids: [] }] });
   }
+  if (editor.unauthorized) return <div className="diagnostic-workspace">
+    <p role="alert" className="diagnostic-error">{editor.error}</p>
+    <Link className="diagnostic-link" href="/login">Sign in again</Link>
+  </div>;
   return <div className="diagnostic-workspace">
     <section aria-labelledby="diagnostic-assessments">
       <h2 id="diagnostic-assessments">Your school&apos;s assessments</h2>
