@@ -21,7 +21,7 @@ export function DiagnosticConceptEditor({ concept, peers, candidates, disabled, 
     <legend>Concept: {concept.label || "Untitled"}</legend>
     <div className="diagnostic-fields">
       <label htmlFor={`${prefix}-id`}>Concept ID
-        <input id={`${prefix}-id`} value={concept.id} required maxLength={40} pattern="[a-z][a-z0-9-]{0,39}" disabled={disabled || referenced}
+        <input id={`${prefix}-id`} value={concept.id} required maxLength={40} pattern={"[a-z][a-z0-9\\-]{0,39}"} disabled={disabled || referenced}
           aria-describedby={`${prefix}-id-help`} onChange={event => onChange({ ...concept, id: event.target.value })} />
       </label>
       <label htmlFor={`${prefix}-label`}>Concept label

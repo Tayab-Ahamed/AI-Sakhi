@@ -135,3 +135,17 @@ it("shows definitive publication rejection and unlocks the draft for correction"
   expect(await screen.findByRole("alert")).toHaveTextContent(/questions are unavailable/i);
   expect(screen.getByRole("textbox", { name: "Assessment title" })).toBeEnabled();
 });
+
+it("lists a new draft immediately and ignores a late stale empty list", async () => {
+  let resolveList!: (value: Awaited<ReturnType<typeof api.listDiagnosticBlueprints>>) => void;
+  vi.mocked(api.listDiagnosticBlueprints).mockReturnValue(new Promise(resolve => { resolveList = resolve; }));
+  vi.spyOn(api, "createDiagnosticBlueprint").mockResolvedValue(blueprint);
+  render(<DiagnosticEditor identity={identity} />);
+  fireEvent.change(screen.getByRole("textbox", { name: "Assessment title" }), { target: { value: "School check" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Subject" }), { target: { value: "Math" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create draft" }));
+  expect(await screen.findByRole("button", { name: "Edit School check" })).toBeVisible();
+  await act(async () => resolveList({ blueprints: [], next_after_id: null }));
+  expect(screen.getByRole("button", { name: "Edit School check" })).toBeVisible();
+  expect(screen.queryByText(/no assessments yet/i)).not.toBeInTheDocument();
+});

@@ -43,3 +43,12 @@ it("disables all editing while a mutation is unresolved", () => {
   expect(screen.getByRole("textbox", { name: "Concept label" })).toBeDisabled();
   expect(screen.getByRole("checkbox", { name: /question 1:/i })).toBeDisabled();
 });
+
+it("has a native HTML v-flag pattern that accepts hyphenated local IDs", () => {
+  render(<Harness />);
+  const source = screen.getByRole("textbox", { name: "Concept ID" }).getAttribute("pattern");
+  const pattern = new RegExp(`^(?:${source})$`, "v");
+  expect(pattern.test("base-idea1")).toBe(true);
+  expect(pattern.test("INVALID")).toBe(false);
+  expect(pattern.test("1base")).toBe(false);
+});

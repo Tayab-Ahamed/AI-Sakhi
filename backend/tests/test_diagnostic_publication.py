@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
@@ -160,3 +161,31 @@ def test_foreign_withdrawal_is_not_found(school_api):
     with pytest.raises(service.DiagnosticError) as error:
         invoke(service.withdraw_version, ids, "other_teacher", version_id=configured["version"]["id"])
     assert error.value.status == 404
+
+
+def test_failure_after_version_insert_rolls_back_without_skipping_version(school_api):
+    client, ids, headers, *_ = school_api
+    config = published_blueprint(client, ids, headers)
+    saved = invoke(
+        service.save_blueprint,
+        ids,
+        "teacher",
+        blueprint_id=config["blueprint"]["id"],
+        expected_revision=2,
+        definition=config["definition"],
+    )
+    conn = db.get_connection()
+    conn.execute(
+        "CREATE TRIGGER fail_publication AFTER INSERT ON diagnostic_versions BEGIN SELECT RAISE(ABORT,'injected publication failure'); END"
+    )
+    conn.commit()
+    conn.close()
+    with pytest.raises(sqlite3.IntegrityError, match="injected publication failure"):
+        invoke(service.publish_blueprint, ids, "teacher", blueprint_id=saved["id"], expected_revision=3)
+    conn = db.get_connection()
+    assert conn.execute("SELECT COUNT(*) FROM diagnostic_versions").fetchone()[0] == 1
+    conn.execute("DROP TRIGGER fail_publication")
+    conn.commit()
+    conn.close()
+    version = invoke(service.publish_blueprint, ids, "teacher", blueprint_id=saved["id"], expected_revision=3)
+    assert version["version_number"] == 2

@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import pytest
@@ -6,7 +7,7 @@ import pytest
 from backend import auth, db, main
 from backend.authz import get_identity, unprotected_routes
 from backend.security import PUBLIC_EXACT, PUBLIC_PREFIXES
-from backend.tests.diagnostic_helpers import invoke, published_blueprint
+from backend.tests.diagnostic_helpers import approved_questions, invoke, published_blueprint
 
 PREFIX = "/v2/diagnostics"
 
@@ -189,3 +190,50 @@ def test_no_snapshot_leak_in_student_list_and_revocation(school_api):
     )
     db.deactivate_user(ids["student"])
     assert client.get(PREFIX + "/blueprints", headers=headers("student")).status_code == 401
+
+
+def test_four_way_http_create_publish_start_and_submit_commit_once(school_api):
+    client, ids, headers, *_ = school_api
+
+    def concurrent(path, actor, body):
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            responses = list(
+                pool.map(lambda _: client.post(PREFIX + path, headers=headers(actor), json=body), range(4))
+            )
+        assert all(r.status_code in (200, 201) for r in responses)
+        values = [r.json() for r in responses]
+        assert all(value == values[0] for value in values)
+        return values[0]
+
+    created = concurrent("/blueprints", "teacher", creation())
+    questions = approved_questions(client, headers, 3)
+    definition = {
+        **created["definition"],
+        "concepts": [
+            {"id": "base", "label": "Foundations", "prerequisite_ids": [], "question_ids": questions}
+        ],
+    }
+    saved = client.put(
+        PREFIX + f"/blueprints/{created['id']}",
+        headers=headers("teacher"),
+        json={"expected_revision": 1, "definition": definition},
+    )
+    assert saved.status_code == 200
+    version = concurrent(f"/blueprints/{created['id']}/publish", "teacher", {"expected_revision": 2})
+    started = concurrent("/attempts", "student", {"creation_key": str(uuid4()), "version_id": version["id"]})
+    completed = concurrent(
+        f"/attempts/{started['id']}/submission", "student", {"answers": {str(q): None for q in questions}}
+    )
+    assert completed["result"]["skipped_count"] == 3
+    conn = db.get_connection()
+    assert conn.execute("SELECT COUNT(*) FROM diagnostic_attempts").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM diagnostic_versions").fetchone()[0] == 1
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM learning_events WHERE user_id=? AND event_type='diagnostic_completed'",
+            (ids["student"],),
+        ).fetchone()[0]
+        == 1
+    )
+    assert conn.execute("SELECT COUNT(*) FROM progress WHERE user_id=?", (ids["student"],)).fetchone()[0] == 0
+    conn.close()

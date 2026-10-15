@@ -207,7 +207,7 @@ def score_definition(snapshot, answers):
         next_action = {
             "kind": "spaced_practice",
             "concept_id": None,
-            "reason": "Every concept shows provisional strength in three answered questions; use spaced practice, not a claim of mastery.",
+            "reason": f"{len(items)}/{len(items)} answered, {sum(item['is_correct'] for item in items)} correct. Every concept shows provisional strength; use spaced practice, not a claim of mastery.",
             "href": "/practice",
         }
     answered = sum(not item["is_skipped"] for item in items)

@@ -174,6 +174,40 @@ def test_public_projection_never_exposes_keys(snapshot):
     assert "School question" in public
 
 
+def test_all_strength_next_step_explains_exact_counts(snapshot):
+    from backend.diagnostic_rules import score_definition
+
+    result = score_definition(snapshot, {str(i): 0 for i in range(1, 7)})
+    assert "6/6 answered, 6 correct" in result["next_action"]["reason"]
+
+
+def test_all_indirect_ancestors_keep_review_and_unassessed_evidence_separate(snapshot):
+    from backend.diagnostic_rules import score_definition
+
+    snapshot["concepts"].append(
+        {
+            "id": "last",
+            "label": "Last idea",
+            "prerequisite_ids": ["next"],
+            "questions": [
+                {
+                    "id": i,
+                    "question_text": f"Question {i}",
+                    "options": ["Yes", "No"],
+                    "correct_index": 0,
+                    "explanation": "Reviewed",
+                }
+                for i in range(7, 10)
+            ],
+        }
+    )
+    answers = {str(i): None if i <= 3 else 1 if i <= 6 else 0 for i in range(1, 10)}
+    result = score_definition(snapshot, answers)
+    last = result["concept_results"][2]
+    assert last["review_prerequisites"] == [{"id": "next", "label": "Next idea"}]
+    assert last["unassessed_prerequisites"] == [{"id": "base", "label": "Foundations"}]
+
+
 @pytest.mark.parametrize(
     "field,value",
     [

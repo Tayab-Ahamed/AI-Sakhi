@@ -23,7 +23,9 @@ export function useDiagnosticEditor(identity: DiagnosticIdentity) {
   const publishIntent = useRef<DiagnosticBlueprint | null>(null);
   useEffect(() => {
     alive.current = true;
-    api.listDiagnosticBlueprints({ limit: 20 }).then(value => { if (alive.current) setList(value); })
+    api.listDiagnosticBlueprints({ limit: 20 }).then(value => {
+      if (alive.current) setList(previous => ({ ...value, blueprints: [...new Map([...value.blueprints, ...previous.blueprints].map(card => [card.id, card])).values()].sort((a, b) => a.id - b.id) }));
+    })
       .catch(() => { if (alive.current) setError("Could not load school assessments. Reload the list to reconnect."); })
       .finally(() => { if (alive.current) setLoading(false); });
     return () => { alive.current = false; };
@@ -39,6 +41,10 @@ export function useDiagnosticEditor(identity: DiagnosticIdentity) {
   function accept(value: DiagnosticBlueprint) {
     if (!alive.current) return;
     setBlueprint(value); setDefinition(value.definition);
+    const card = { id: value.id, title: value.definition.title, class_level: value.definition.class_level,
+      subject: value.definition.subject, draft_revision: value.draft_revision, latest_version: value.latest_version,
+      concept_count: value.definition.concepts.length, question_count: value.definition.concepts.reduce((total, concept) => total + concept.question_ids.length, 0) };
+    setList(previous => ({ ...previous, blueprints: [...previous.blueprints.filter(item => item.id !== value.id), card].sort((a, b) => a.id - b.id) }));
   }
   async function questionPage(saved: DiagnosticBlueprint, after_id = 0) {
     const page = await api.getDiagnosticCandidates(saved.id, { after_id, limit: 20 });
