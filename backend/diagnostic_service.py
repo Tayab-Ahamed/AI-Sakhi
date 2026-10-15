@@ -2,13 +2,16 @@
 
 import json
 from functools import wraps
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from backend.db import now_iso
 from backend.diagnostic_rules import (
     MAX_OPTIONS_JSON,
     diagnostic_snapshot,
+    public_definition,
+    score_definition,
     topological_ids,
+    validate_answers,
     validate_definition,
 )
 
@@ -309,3 +312,129 @@ def withdraw_version(conn, identity, version_id):
     return version_metadata(
         conn.execute("SELECT * FROM diagnostic_versions WHERE id=?", (version_id,)).fetchone()
     )
+
+
+def _attempt(conn, identity, attempt_id):
+    profile = _account(conn, identity, ("student",))
+    row = conn.execute(
+        "SELECT a.*,v.snapshot_json,v.withdrawn_at FROM diagnostic_attempts a "
+        "JOIN diagnostic_versions v ON v.id=a.version_id "
+        "WHERE a.id=? AND a.user_id=? AND a.organization_id=? AND a.class_level=?",
+        (attempt_id, identity.user_id, identity.organization_id, profile["class"]),
+    ).fetchone()
+    if row is None:
+        raise DiagnosticError(404, "Assessment attempt not found")
+    return row
+
+
+def public_attempt(row):
+    definition = public_definition(json.loads(row["snapshot_json"]))
+    return {
+        "id": row["id"],
+        "version_id": row["version_id"],
+        **definition,
+        "status": row["status"],
+        "result": json.loads(row["result_json"]) if row["result_json"] else None,
+    }
+
+
+def _check_content(conn, organization_id, version):
+    if version["withdrawn_at"] is not None:
+        raise DiagnosticError(
+            409, "This publication was withdrawn by your school. Return to the assessment list."
+        )
+    snapshot = json.loads(version["snapshot_json"])
+    definition = {
+        **snapshot,
+        "concepts": [
+            {
+                **{k: c[k] for k in ("id", "label", "prerequisite_ids")},
+                "question_ids": [q["id"] for q in c["questions"]],
+            }
+            for c in snapshot["concepts"]
+        ],
+    }
+    current = _selected_questions(conn, organization_id, definition)
+    if any(current.get(q["id"]) != q for c in snapshot["concepts"] for q in c["questions"]):
+        raise DiagnosticError(
+            409, "Assessment content was recalled or changed by your school. Return to the assessment list."
+        )
+
+
+def read_attempt(conn, identity, attempt_id):
+    row = _attempt(conn, identity, attempt_id)
+    if row["status"] != "completed":
+        _check_content(conn, identity.organization_id, row)
+    return public_attempt(row)
+
+
+@_transaction
+def start_attempt(conn, identity, creation_key, version_id):
+    profile = _account(conn, identity, ("student",))
+    creation_key = _intent(creation_key)
+    previous = conn.execute(
+        "SELECT * FROM diagnostic_attempts WHERE user_id=? AND creation_key=?",
+        (identity.user_id, creation_key),
+    ).fetchone()
+    if previous:
+        if (previous["version_id"], previous["organization_id"], previous["class_level"]) != (
+            version_id,
+            identity.organization_id,
+            profile["class"],
+        ):
+            raise DiagnosticError(409, "Creation key already used for a different assessment intent")
+        return read_attempt(conn, identity, previous["id"])
+    version = conn.execute(
+        "SELECT * FROM diagnostic_versions WHERE id=? AND organization_id=? AND class_level=?",
+        (version_id, identity.organization_id, profile["class"]),
+    ).fetchone()
+    if version is None:
+        raise DiagnosticError(404, "Publication not found")
+    latest = _latest(conn, version["blueprint_id"])
+    if latest["id"] != version_id:
+        raise DiagnosticError(409, "A newer publication is available. Reload the assessment list.")
+    _check_content(conn, identity.organization_id, version)
+    attempt_id = str(uuid4())
+    conn.execute(
+        "INSERT INTO diagnostic_attempts(id,user_id,organization_id,class_level,version_id,creation_key,status,created_at) VALUES(?,?,?,?,?,?,'active',?)",
+        (
+            attempt_id,
+            identity.user_id,
+            identity.organization_id,
+            profile["class"],
+            version_id,
+            creation_key,
+            now_iso(),
+        ),
+    )
+    return public_attempt(_attempt(conn, identity, attempt_id))
+
+
+@_transaction
+def submit_attempt(conn, identity, attempt_id, answers):
+    row = _attempt(conn, identity, attempt_id)
+    snapshot = json.loads(row["snapshot_json"])
+    validate_answers(snapshot, answers)
+    encoded = encode(answers)
+    if row["status"] == "completed":
+        if encoded != row["answers_json"]:
+            raise DiagnosticError(
+                409, "This attempt is already completed with different answers. Load its stored result."
+            )
+        return public_attempt(row)
+    _check_content(conn, identity.organization_id, row)
+    result = score_definition(snapshot, answers)
+    conn.execute(
+        "UPDATE diagnostic_attempts SET status='completed',answers_json=?,result_json=?,submitted_at=? WHERE id=?",
+        (encoded, encode(result), now_iso(), attempt_id),
+    )
+    metadata = {
+        "attempt_id": attempt_id,
+        "version_id": row["version_id"],
+        **{k: result[k] for k in ("correct_count", "answered_count", "question_count", "skipped_count")},
+    }
+    conn.execute(
+        "INSERT INTO learning_events(user_id,organization_id,event_type,metadata_json,created_at) VALUES(?,?,'diagnostic_completed',?,?)",
+        (identity.user_id, identity.organization_id, encode(metadata), now_iso()),
+    )
+    return public_attempt(_attempt(conn, identity, attempt_id))
