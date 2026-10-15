@@ -5,7 +5,12 @@ from functools import wraps
 from uuid import UUID
 
 from backend.db import now_iso
-from backend.diagnostic_rules import MAX_OPTIONS_JSON, diagnostic_snapshot, validate_definition
+from backend.diagnostic_rules import (
+    MAX_OPTIONS_JSON,
+    diagnostic_snapshot,
+    topological_ids,
+    validate_definition,
+)
 
 
 class DiagnosticError(Exception):
@@ -88,14 +93,6 @@ def _latest(conn, blueprint_id):
         "SELECT * FROM diagnostic_versions WHERE blueprint_id=? ORDER BY version_number DESC LIMIT 1",
         (blueprint_id,),
     ).fetchone()
-
-
-# Bounds are SQL predicates, before SQLite returns arbitrary historical content to Python.
-_QUESTION_BOUNDS = (
-    "length(question_text) BETWEEN 1 AND 5000 AND length(options_json)<=? "
-    "AND length(COALESCE(explanation,''))<=5000 AND length(correct_answer)<=5000"
-)
-_QUESTION_FIELDS = "id,question_text,options_json,correct_answer,explanation"
 
 
 def _selected_questions(conn, organization_id, definition):
@@ -223,3 +220,92 @@ def list_blueprints(conn, identity, after_id=0, limit=100):
             card["draft_revision"] = row["draft_revision"]
         cards.append(card)
     return {"blueprints": cards, "next_after_id": rows[limit - 1]["id"] if len(rows) > limit else None}
+
+
+def question_candidates(conn, identity, blueprint_id, after_id=0, limit=100):
+    row = _blueprint(conn, identity, blueprint_id)
+    _page(after_id, limit)
+    definition = json.loads(row["definition_json"])
+    rows = conn.execute(
+        "SELECT id,question_text,options_json,correct_answer,explanation FROM question_bank "
+        "WHERE organization_id=? AND class_level=? AND subject=? AND status='approved' AND question_type='mcq' "
+        "AND id>? AND length(question_text) BETWEEN 1 AND 5000 AND length(options_json)<=? "
+        "AND length(COALESCE(explanation,''))<=5000 AND length(correct_answer)<=5000 ORDER BY id LIMIT ?",
+        (
+            identity.organization_id,
+            definition["class_level"],
+            definition["subject"],
+            after_id,
+            MAX_OPTIONS_JSON,
+            limit + 1,
+        ),
+    ).fetchall()
+    return {
+        "questions": [q for row in rows[:limit] if (q := diagnostic_snapshot(dict(row))) is not None],
+        "next_after_id": rows[limit - 1]["id"] if len(rows) > limit else None,
+    }
+
+
+@_transaction
+def publish_blueprint(conn, identity, blueprint_id, expected_revision):
+    row = _blueprint(conn, identity, blueprint_id)
+    previous = conn.execute(
+        "SELECT * FROM diagnostic_versions WHERE blueprint_id=? AND draft_revision=?",
+        (blueprint_id, expected_revision),
+    ).fetchone()
+    if previous:
+        return version_metadata(previous)  # Withdrawal remains terminal, including on replay.
+    if expected_revision != row["draft_revision"]:
+        raise DiagnosticError(409, "Draft changed. Reload before publishing.")
+    definition = validate_definition(json.loads(row["definition_json"]), complete=True)
+    questions = _selected_questions(conn, identity.organization_id, definition)
+    if len(questions) != sum(len(c["question_ids"]) for c in definition["concepts"]):
+        raise DiagnosticError(
+            422,
+            "One or more selected questions are unavailable or not eligible. Review the draft selections.",
+        )
+    concepts = {c["id"]: c for c in definition["concepts"]}
+    snapshot = {
+        **definition,
+        "concepts": [
+            {
+                **{k: concepts[cid][k] for k in ("id", "label", "prerequisite_ids")},
+                "questions": [questions[qid] for qid in concepts[cid]["question_ids"]],
+            }
+            for cid in topological_ids(definition["concepts"])
+        ],
+    }
+    latest = _latest(conn, blueprint_id)
+    cursor = conn.execute(
+        "INSERT INTO diagnostic_versions(blueprint_id,organization_id,class_level,subject,version_number,draft_revision,snapshot_json,published_by,published_at) VALUES(?,?,?,?,?,?,?,?,?)",
+        (
+            blueprint_id,
+            identity.organization_id,
+            definition["class_level"],
+            definition["subject"],
+            latest["version_number"] + 1 if latest else 1,
+            expected_revision,
+            encode(snapshot),
+            identity.user_id,
+            now_iso(),
+        ),
+    )
+    return version_metadata(
+        conn.execute("SELECT * FROM diagnostic_versions WHERE id=?", (cursor.lastrowid,)).fetchone()
+    )
+
+
+@_transaction
+def withdraw_version(conn, identity, version_id):
+    _account(conn, identity, ("teacher", "admin"))
+    row = conn.execute(
+        "SELECT * FROM diagnostic_versions WHERE id=? AND organization_id=?",
+        (version_id, identity.organization_id),
+    ).fetchone()
+    if row is None:
+        raise DiagnosticError(404, "Publication not found")
+    if row["withdrawn_at"] is None:
+        conn.execute("UPDATE diagnostic_versions SET withdrawn_at=? WHERE id=?", (now_iso(), version_id))
+    return version_metadata(
+        conn.execute("SELECT * FROM diagnostic_versions WHERE id=?", (version_id,)).fetchone()
+    )
